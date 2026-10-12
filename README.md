@@ -1,8 +1,8 @@
 # Kim课表
 
-一个适合不同学校使用的安卓课表 Demo。应用名「Kim课表」，包名 `com.kim.timetable`，版本 0.3.0。
+一个适合不同学校使用的安卓课表 Demo。应用名「Kim课表」，包名 `com.kim.timetable`，版本 0.3.1。
 
-在 [版本下载页](https://github.com/Monkey-cmd/kim-timetable/releases/tag/v0.3.0-demo) 下载 `kim-timetable-0.3.0-demo.apk`。仓库公开，其他人可以查看源码、下载安装包。
+在 [版本下载页](https://github.com/Monkey-cmd/kim-timetable/releases/tag/v0.3.1-demo) 下载 `kim-timetable-0.3.1-demo.apk`。仓库公开，其他人可以查看源码、下载安装包。
 
 ## 安装与使用
 
@@ -28,7 +28,7 @@ Kim课表使用新的应用标识，会与旧版并存。请先在旧版的「�
     npm run sync:android
     powershell -NoProfile -File scripts/build-apk.ps1 -JavaHome "JDK21目录" -AndroidSdkRoot "SDK目录"
 
-成功输出 `build-output/kim-timetable-0.3.0-demo.apk`。构建脚本在临时 ASCII 路径编译，避免 Windows 中文目录兼容问题，并校验 APK 签名。首次构建生成本地 debug 签名文件，后续构建复用它；正式商店发布需要正式签名。
+成功输出 `build-output/kim-timetable-0.3.1-demo.apk`。构建脚本在临时 ASCII 路径编译，避免 Windows 中文目录兼容问题，并校验 APK 签名。首次构建生成本地 debug 签名文件，后续构建复用它；正式商店发布需要正式签名。
 
 如果桌面执行环境出现 Java `Unable to establish loopback connection`，可给构建脚本增加 `-TcpLoopbackWorkaround`，仅调整本次 Java 进程的 socket 临时目录，使 JDK 使用 TCP 回退。
 

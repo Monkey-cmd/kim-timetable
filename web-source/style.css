@@ -11,3 +11,7 @@
 .calendar.weekdays-only .day-heads{grid-template-columns:34px repeat(5,minmax(0,1fr))}.calendar.weekdays-only .course-grid{grid-template-columns:repeat(5,minmax(0,1fr))}.today-btn[aria-pressed="true"]{background:#e8efdf;color:var(--green)}
 @media(max-width:640px){.calendar.weekdays-only .day-heads{grid-template-columns:27px repeat(5,minmax(0,1fr))}.weekdays-only .course-block{padding:8px 5px;gap:6px}.weekdays-only .course-block strong{font-size:11px;line-height:1.35}.weekdays-only .course-block span{font-size:9px;-webkit-line-clamp:1}.weekdays-only .day-head{font-size:10px}.weekdays-only .day-number{font-size:13px}}
 .page-heading>.primary-btn{white-space:nowrap;flex-shrink:0}
+
+.period{padding-top:5px;gap:2px;line-height:1.2}
+.period .period-time{display:flex;flex-direction:column;gap:1px;font-size:8px;color:#879480;line-height:1.2;white-space:nowrap}
+.period-time span:last-child{color:#96a18f}
