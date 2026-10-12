@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f7f3">
+  <meta name="description" content="上大课表手机演示版：查看每周课程、管理课程和备忘录、在本机读取课表 PDF。">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <title>上大课表 · 每一天，心里有数</title>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#week"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>上大课表<small>SHU TIMETABLE</small></span></a>
+      <div class="side-caption">我的校园日常</div>
+      <nav class="side-nav" aria-label="主要导航"></nav>
+      <div class="side-bottom"><div class="school-mark">SHU<span>上海大学</span></div><p>把日子安排得刚刚好。</p><span class="demo-chip">DEMO · 演示版</span></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar"><a href="#week" class="mobile-brand"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>上大课表</a><div class="desktop-breadcrumb">我的校园 <span>/</span> <strong id="breadcrumb">每周课表</strong></div><div class="topbar-right"><span class="school-badge">上海大学</span><span class="avatar" aria-label="个人课表">课</span></div></header>
+      <main id="main"></main>
+      <footer class="page-footer"><span>上大课表 · 手机演示版</span><span>课程信息以学校教务系统为准</span></footer>
+    </div>
+  </div>
+  <nav class="bottom-nav" aria-label="手机导航"></nav>
+  <dialog id="sheet" class="sheet"><div id="sheet-content"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input id="file-input" type="file" accept="application/pdf,.pdf,application/json,.json" hidden>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
