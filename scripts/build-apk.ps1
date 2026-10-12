@@ -45,7 +45,7 @@ if (-not (Test-Path -LiteralPath $debugKey)) {
 }
 # A temporary ASCII project path avoids Android Windows path restrictions.
 $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-$stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $tempBase ('shu-schedule-build-' + [guid]::NewGuid().ToString('N'))))
+$stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $tempBase ('Kim-timetable-build-' + [guid]::NewGuid().ToString('N'))))
 if (-not $stagingRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid build staging path' }
 New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'android') -Destination (Join-Path $stagingRoot 'android') -Recurse
@@ -66,7 +66,7 @@ try {
 } finally { Pop-Location }
 $builtApk = Join-Path $stagingRoot 'android/app/build/outputs/apk/debug/app-debug.apk'
 if (-not (Test-Path -LiteralPath $builtApk)) { throw 'Build finished without an APK' }
-$apkPath = Join-Path $outputRoot 'shu-timetable-0.2.0-demo.apk'
+$apkPath = Join-Path $outputRoot 'kim-timetable-0.3.0-demo.apk'
 Copy-Item -LiteralPath $builtApk -Destination $apkPath -Force
 $buildTools = Get-ChildItem -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -Directory | Sort-Object Name -Descending | Select-Object -First 1
 & (Join-Path $buildTools.FullName 'apksigner.bat') verify --verbose $apkPath

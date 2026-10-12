@@ -1,6 +1,6 @@
 {
-  "id": "./", "name": "上大课表", "short_name": "上大课表",
-  "description": "上海大学课表手机 Demo", "lang": "zh-CN",
+  "id": "./", "name": "Kim课表", "short_name": "Kim课表",
+  "description": "课程、作息与备忘录，按你的学校来安排", "lang": "zh-CN",
   "start_url": "./", "scope": "./", "display": "standalone",
   "background_color": "#f6f7f3", "theme_color": "#245747",
   "icons": [

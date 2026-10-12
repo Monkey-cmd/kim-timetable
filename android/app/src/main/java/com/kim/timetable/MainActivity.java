@@ -1,4 +1,4 @@
-package cn.shu.pocket.timetable;
+package com.kim.timetable;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

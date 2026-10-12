@@ -1,46 +1,44 @@
-# 上大课表 · 安卓体验版
+# Kim课表
 
-上海大学课表 Android Demo，应用名「上大课表」，包名 `cn.shu.pocket.timetable`，版本 0.2.0。
+一个适合不同学校使用的安卓课表 Demo。应用名「Kim课表」，包名 `com.kim.timetable`，版本 0.3.0。
 
-在 [版本下载页](https://github.com/Monkey-cmd/shu-pocket-timetable/releases/tag/v0.2.0-demo) 下载 `shu-timetable-0.2.0-demo.apk`。仓库为私有，需登录有权限的 GitHub 账号。
+在 [版本下载页](https://github.com/Monkey-cmd/kim-timetable/releases/tag/v0.3.0-demo) 下载 `kim-timetable-0.3.0-demo.apk`。仓库公开，其他人可以查看源码、下载安装包。
 
-安装：将 APK 发送到自己的安卓手机，用文件管理器打开；如果系统提示，允许该文件管理器安装应用，然后继续安装。支持 Android 7.0 以上，浏览器组件 Android System WebView / Chrome 需要版本 110 以上。过旧的组件会显示更新提示。
+## 安装与使用
 
-验证：17 项课表、PDF 表格解析及备忘录检查通过；Android 编译与 APK 签名校验通过；安装包中的 211 个网页及 PDF 资源与准备的应用完全一致。尚未在安卓手机上做真机测试。
+将 APK 保存到安卓手机，用文件管理器打开；按系统提示允许该文件管理器安装应用。支持 Android 7.0 以上，Android System WebView / Chrome 需要版本 110 以上。过旧的组件会显示更新提示。这是体验版，使用 debug 签名；暂未做安卓真机测试。
 
-网页版体验地址：https://shu-pocket-timetable.alightharp64.chatgpt.site
+先在设置中填写学校、学期、第 1 周的星期一和作息，再手动添加课程或导入 PDF。支持周课表、今日课程、指定周次、单双周、冲突提示、课程管理、备忘录和 JSON 备份。
 
-保留周课表、今日课程、PDF 导入、课程管理、备忘录及 JSON 备份。页面和 PDF.js 资源都打包到 App 内；不依赖已发布的网站打开，不需要学校账号密码。学校账号自动同步和手机通知暂未实现。
+PDF 在手机本地解析，支持文字版 PDF。目前表格识别支持特定的 12 节横向布局；也支持同一行包含课程名称、星期和节次的文字条目。不同学校的 PDF 格式可能无法自动识别，请检查候选结果，必要时手动添加。扫描图片 PDF 暂不支持。学校账号登录同步和手机通知暂未实现。
 
-安卓已适配：
+课程、备忘录和 PDF 解析资源随安装包保存，日常使用可离线。文件导入使用系统文件选择器，JSON 导出使用系统「另存为」，不申请全盘文件访问权限。
 
-- 系统文件选择器导入 PDF / JSON，系统「另存为」保存备份。
-- 原生 Preferences 保存课程和备忘录，写入成功后才显示保存成功。
-- 手机返回键优先关闭弹窗，再回到课表；主页最小化 App。
-- 竖屏、横屏避让系统栏与屏幕边缘，保留上大课表图标。
-- 不申请全盘文件访问权限。学校外链在系统浏览器打开。
+## 从旧版迁移
 
-原网页版和 App 分别保存数据。安装后可以重新导入学校 PDF，也可以先在网页导出 JSON，再在 App 导入，迁移课表与备忘录。卸载或清除 App 数据会清除保存内容。
+Kim课表使用新的应用标识，会与旧版并存。请先在旧版的「设置 → 导出 JSON」保存备份，再在 Kim课表的「导入」中选择备份、检查并确认。旧备份可恢复课程、备忘录、学期和作息；迁移成功后再自行卸载旧版。
+
+网页版和安卓 App 分别保存数据，也可用 JSON 备份迁移。卸载或清除 App 数据会移除保存内容，建议定期导出备份。个人 PDF、实际课程数据和学校账号信息不包含在此仓库中。
 
 ## 生成 APK
 
-需要 Node.js 22+、Java 21、Android SDK（API 36、Build Tools 35）。Google SDK 许可必须由用户明确同意后才能安装和使用；本工程和构建脚本不会自动接受许可。本次构建已由用户明确同意许可并安装工具。
+需要 Node.js 22+、Java 21、Android SDK（API 36、Build Tools 35 或以上）。使用 SDK 前需自行阅读并接受 Google Android SDK 许可。构建脚本不会自动接受许可。
 
     npm ci
     npm run sync:android
     powershell -NoProfile -File scripts/build-apk.ps1 -JavaHome "JDK21目录" -AndroidSdkRoot "SDK目录"
 
-构建脚本会在临时 ASCII 路径编译，避免 Windows 中文目录兼容问题，并校验 APK 签名。成功输出：`build-output/shu-timetable-0.2.0-demo.apk`。体验版使用本地 debug 签名，适合直接安装试用；Google Play 发布需要另行准备正式签名。
+成功输出 `build-output/kim-timetable-0.3.0-demo.apk`。构建脚本在临时 ASCII 路径编译，避免 Windows 中文目录兼容问题，并校验 APK 签名。首次构建生成本地 debug 签名文件，后续构建复用它；正式商店发布需要正式签名。
 
-如果桌面执行环境出现 Java `Unable to establish loopback connection`，可给构建脚本增加 `-TcpLoopbackWorkaround`。它只调整本次 Java 进程的 socket 临时目录，让 JDK 使用 TCP 回退，不修改系统或手机配置；本次构建使用了此选项。
+如果桌面执行环境出现 Java `Unable to establish loopback connection`，可给构建脚本增加 `-TcpLoopbackWorkaround`，仅调整本次 Java 进程的 socket 临时目录，使 JDK 使用 TCP 回退。
 
-## 源码同步
+## 项目结构
 
-`scripts/sync-web.mjs` 仅复制相邻 `shu-schedule/dist` 的公开资源（独立源码 ZIP 使用 `web-source` 快照），增加安卓存储/返回键/导出适配，不更改网页原工程，不复制 Sites 身份、原 PDF、截图或浏览器个人数据。`npm test` 验证打包到 App 的课程、PDF 表格解析及备忘录数据模型。
+- `web-source`：独立的网页源码及离线 PDF 资源。
+- `native`：安卓存储、返回键与 JSON 导出适配。
+- `android`：安卓工程。
+- `scripts/sync-web.mjs`：准备网页资源，加入安卓适配；`npm test` 检查课程、PDF 解析与备忘录逻辑。
 
-工具链、依赖缓存、SDK、签名文件与构建结果不纳入项目源码。许可及技术依据：
+依赖缓存、SDK、签名文件与构建结果不纳入源码。PDF.js 及其字体、CMap、WASM 资源的许可证随 `web-source/vendor` 保留。
 
-- https://developer.android.com/studio#command-tools
-- https://capacitorjs.com/docs/android
-- https://capacitorjs.com/docs/apis/preferences
-- https://capacitorjs.com/docs/apis/system-bars
+技术文档：[Android SDK](https://developer.android.com/studio#command-tools)、[Capacitor Android](https://capacitorjs.com/docs/android)、[Preferences](https://capacitorjs.com/docs/apis/preferences)、[System Bars](https://capacitorjs.com/docs/apis/system-bars)。

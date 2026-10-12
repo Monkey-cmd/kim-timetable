@@ -1,6 +1,6 @@
 {
-  "name": "shu-timetable-android",
-  "version": "0.2.0",
+  "name": "kim-timetable-android",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {

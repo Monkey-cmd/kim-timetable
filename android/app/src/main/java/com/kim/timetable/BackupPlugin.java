@@ -1,4 +1,4 @@
-package cn.shu.pocket.timetable;
+package com.kim.timetable;
 
 import android.app.Activity;
 import android.content.Intent;

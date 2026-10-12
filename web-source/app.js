@@ -1,8 +1,8 @@
-import {COLORS,DAYS,DEFAULT_SETTINGS,DEFAULT_TIMES,DEMO_COURSES,clone,localDate,dateFrom,addDays,weekOf,dayOf,weekStart,activeInWeek,coursesOn,normalizeCourse,normalizeSettings,timeMinutes,courseConflicts,importBackup,parseCourseLines,parseWeekSpec,formatWeekSpec} from './core.js';
-import {pageItems,textLines,parseShuPage} from './pdf-import.js';
+import {COLORS,DAYS,DEFAULT_SETTINGS,DEFAULT_TIMES,DEMO_COURSES,clone,localDate,dateFrom,addDays,weekOf,dayOf,weekStart,activeInWeek,coursesOn,normalizeCourse,normalizeSettings,validateCoursePeriods,timeMinutes,courseConflicts,importBackup,parseCourseLines,parseWeekSpec,formatWeekSpec} from './core.js';
+import {pageItems,textLines,parseTimetablePage} from './pdf-import.js';
 import {normalizeMemo,normalizeMemos,memoStatus,sortMemos} from './memos.js';
 
-const KEY='shu-timetable-demo-v1';
+const KEY='kim-timetable-v1',LEGACY_KEY='shu-timetable-demo-v1';
 const main=document.querySelector('#main'),sheet=document.querySelector('#sheet'),fileInput=document.querySelector('#file-input');
 const svgPaths={
   week:'<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18M8 2v4M16 2v4M8 14h2M14 14h2M8 17h2"/>',
@@ -31,8 +31,11 @@ let state={settings:clone(DEFAULT_SETTINGS),courses:clone(DEMO_COURSES),memos:[]
 let storageWarning='';
 try{
   const stored=localStorage.getItem(KEY);
-  if(stored){
-    const data=JSON.parse(stored);state={settings:normalizeSettings(data.settings),courses:data.courses.map(normalizeCourse),memos:[],demo:!!data.demo};
+  const saved=stored??localStorage.getItem(LEGACY_KEY);
+  if(saved){
+    const data=JSON.parse(saved),settings=normalizeSettings(data.settings),courses=data.courses.map(normalizeCourse);
+    validateCoursePeriods(courses,settings);
+    state={settings,courses,memos:[],demo:!!data.demo};
     try{state.memos=normalizeMemos(data.memos??[]);}catch{storageWarning='备忘录数据无法读取，课表已保留。请从备份恢复备忘录。';}
   }
 }catch{storageWarning='本机保存的数据无法读取，已显示示例课表。';}
@@ -40,6 +43,7 @@ let selectedWeek=clampWeek(weekOf(localDate(),state.settings)),selectedDate=loca
 let route='week',showWeekends=false,importState=null,toastTimeout,deferredInstall=null,memoFilter='pending';
 const navs=[['week','课表','每周课表'],['today','今天','今日课程'],['memos','备忘录','我的备忘录'],['import','导入','导入课表'],['settings','设置','课表设置']];
 function persist(next){
+  validateCoursePeriods(next.courses,next.settings);
   // Mutate in-memory state only after successful storage, so a failed save cannot appear successful.
   try{localStorage.setItem(KEY,JSON.stringify(next));}
   catch{throw new Error('本机存储不可用或空间不足，数据未保存。请检查浏览器存储设置。');}
@@ -58,6 +62,8 @@ function dataNotice(){
 function renderNav(){
   for(const selector of ['.side-nav','.bottom-nav'])document.querySelector(selector).innerHTML=navs.map(([key,label,full])=>'<a class="nav-item '+(route===key?'active':'')+'" href="#'+key+'" '+(route===key?'aria-current="page"':'')+'>'+icon(key)+'<span>'+(selector==='.side-nav'?full:label)+'</span>'+(route===key?'<i class="nav-dot"></i>':'')+'</a>').join('');
   document.querySelector('#breadcrumb').textContent=navs.find(n=>n[0]===route)[2];
+  document.querySelector('#school-badge').textContent=state.settings.school;
+  document.querySelector('#sidebar-school').textContent=state.settings.school;
 }
 function upcoming(){
   const now=new Date(),today=localDate(now),mins=now.getHours()*60+now.getMinutes();
@@ -85,7 +91,7 @@ function renderWeek(){
   const currentDay=weekOf(localDate(),state.settings)===selectedWeek?dayOf(localDate()):0;
   const visibleDays=showWeekends||courses.some(c=>c.day>5)?DAYS:DAYS.slice(0,5);
   main.innerHTML=heading('每一天，心里有数。',esc(state.settings.term)+'<span class="mobile-hide"> · 从容开始这一周</span>',button(icon('plus')+'添加课程','add','primary-btn'))+dataNotice()+
-    '<div class="week-layout"><section class="calendar-panel" aria-label="第'+selectedWeek+'周课程表"><div class="calendar-tools"><div class="week-control">'+button(icon('left'),'prev-week','icon-btn','aria-label="上一周" '+(selectedWeek===1?'disabled':''))+'<div>'+button('第 '+selectedWeek+' 周 '+icon('down'),'choose-week','week-select-btn')+'<div class="date-range">'+shortDate(start)+' — '+shortDate(end)+'</div></div>'+button(icon('right'),'next-week','icon-btn','aria-label="下一周" '+(selectedWeek===state.settings.totalWeeks?'disabled':''))+'</div><div class="calendar-actions">'+button('周末','toggle-weekends','today-btn','aria-pressed="'+showWeekends+'"')+button('本周','current-week','today-btn')+'</div></div><div class="calendar '+(visibleDays.length===5?'weekdays-only':'')+'"><div class="day-heads"><span class="month-head">'+(dateFrom(start).getMonth()+1)+'月</span>'+visibleDays.map((day,index)=>'<div class="day-head '+(index+1===currentDay?'current':'')+'"><span>周'+day+'</span><span class="day-number">'+dateFrom(addDays(start,index)).getDate()+'</span></div>').join('')+'</div><div class="schedule-body"><div class="periods">'+state.settings.times.map((t,index)=>'<div class="period"><span>'+String(index+1).padStart(2,'0')+'</span><small>'+t[0]+'</small></div>').join('')+'</div><div class="course-grid">'+visibleDays.map((_,index)=>'<div class="column-bg '+(index+1===currentDay?'current':'')+'" style="grid-column:'+(index+1)+'"></div>').join('')+courses.map(c=>'<button class="course-block color-'+c.color+'" data-action="detail" data-id="'+esc(c.id)+'" style="grid-column:'+c.day+';grid-row:'+c.start+' / '+(c.end+1)+'" aria-label="'+esc(c.name)+'，周'+DAYS[c.day-1]+'，'+c.start+'至'+c.end+'节，'+esc(c.room)+'"><strong>'+esc(c.name)+'</strong><span>'+esc(c.room||'教室待填写')+'</span><span class="course-period">'+c.start+'–'+c.end+'节</span></button>').join('')+'</div></div></div><div class="calendar-legend"><span><i class="legend-dot" style="background:#adc3a3"></i>点课程查看详情</span><span><i class="legend-dot" style="background:#c7bbd6"></i>单双周自动显示</span></div></section><aside class="aside-stack">'+nextCard()+statsCard()+'<div class="tip-card"><h3>'+icon('leaf')+' 留一点时间给自己</h3><p>课间走走，喝口水。<br>忙碌的日子，也可以有自己的节奏。</p></div></aside></div>';
+    '<div class="week-layout"><section class="calendar-panel" aria-label="第'+selectedWeek+'周课程表"><div class="calendar-tools"><div class="week-control">'+button(icon('left'),'prev-week','icon-btn','aria-label="上一周" '+(selectedWeek===1?'disabled':''))+'<div>'+button('第 '+selectedWeek+' 周 '+icon('down'),'choose-week','week-select-btn')+'<div class="date-range">'+shortDate(start)+' — '+shortDate(end)+'</div></div>'+button(icon('right'),'next-week','icon-btn','aria-label="下一周" '+(selectedWeek===state.settings.totalWeeks?'disabled':''))+'</div><div class="calendar-actions">'+button('周末','toggle-weekends','today-btn','aria-pressed="'+showWeekends+'"')+button('本周','current-week','today-btn')+'</div></div><div class="calendar '+(visibleDays.length===5?'weekdays-only':'')+'"><div class="day-heads"><span class="month-head">'+(dateFrom(start).getMonth()+1)+'月</span>'+visibleDays.map((day,index)=>'<div class="day-head '+(index+1===currentDay?'current':'')+'"><span>周'+day+'</span><span class="day-number">'+dateFrom(addDays(start,index)).getDate()+'</span></div>').join('')+'</div><div class="schedule-body"><div class="periods" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+state.settings.times.map((t,index)=>'<div class="period"><span>'+String(index+1).padStart(2,'0')+'</span><small>'+t[0]+'</small></div>').join('')+'</div><div class="course-grid" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+visibleDays.map((_,index)=>'<div class="column-bg '+(index+1===currentDay?'current':'')+'" style="grid-column:'+(index+1)+'"></div>').join('')+courses.map(c=>'<button class="course-block color-'+c.color+'" data-action="detail" data-id="'+esc(c.id)+'" style="grid-column:'+c.day+';grid-row:'+c.start+' / '+(c.end+1)+'" aria-label="'+esc(c.name)+'，周'+DAYS[c.day-1]+'，'+c.start+'至'+c.end+'节，'+esc(c.room)+'"><strong>'+esc(c.name)+'</strong><span>'+esc(c.room||'教室待填写')+'</span><span class="course-period">'+c.start+'–'+c.end+'节</span></button>').join('')+'</div></div></div><div class="calendar-legend"><span><i class="legend-dot" style="background:#adc3a3"></i>点课程查看详情</span><span><i class="legend-dot" style="background:#c7bbd6"></i>单双周自动显示</span></div></section><aside class="aside-stack">'+nextCard()+statsCard()+'<div class="tip-card"><h3>'+icon('leaf')+' 留一点时间给自己</h3><p>课间走走，喝口水。<br>忙碌的日子，也可以有自己的节奏。</p></div></aside></div>';
 }
 function renderToday(){
   const current=weekOf(selectedDate,state.settings),start=weekStart(current,state.settings);
@@ -122,15 +128,18 @@ function resultHtml(){
     if(courseConflicts(courses.filter(c=>c.selected!==false)).length)text+='<div class="alert-box">候选课程存在时间冲突，请修改或取消勾选后导入。</div>';
     text+='<div class="alert-box">确认后将替换当前课表。建议先导出备份。'+(isBackup?' 备份中的学期和作息设置也会一起恢复。'+(importState.memos!==undefined?' 备忘录将恢复为备份中的 '+importState.memos.length+' 条。':' 此旧备份不包含备忘录，现有备忘录会保留。'):importState.adapter?' 连续周、指定周和停课周次均已保留。现有备忘录会保留。':' PDF 未标明周次时，候选条目默认 1–18 周，请修改为真实周次。现有备忘录会保留。')+'</div><div class="form-footer">'+button('导出当前备份','backup','secondary-btn')+button('确认替换课表','confirm-import','primary-btn')+'</div>';
   }else text+='<div class="alert-box">'+(importState.text.trim()?'已读出文字，但尚未识别到完整课程条目。这份 PDF 的版式与当前适配格式不同；可查看下方原文，再手动添加课程。':'这份 PDF 没有可读取的文字层，可能是扫描图片。本 demo 暂不支持图片文字识别。')+'</div>'+button('手动添加课程','add','secondary-btn','style="margin-top:15px"');
-  if(importState.text)text+='<details><summary>查看 PDF 提取的原文</summary><textarea class="extracted-text" readonly aria-label="PDF 提取文字">'+esc(importState.text)+'</textarea><p class="fine-print">支持上海大学当前个人课表的横向表格版，也支持同一行包含课程名、星期和节次的简单文字条目。</p></details>';
+  if(importState.text)text+='<details><summary>查看 PDF 提取的原文</summary><textarea class="extracted-text" readonly aria-label="PDF 提取文字">'+esc(importState.text)+'</textarea><p class="fine-print">支持文字版 PDF：当前可识别带星期列、12 节编号及课程元数据的横向表格，以及同一行含课程名、星期和节次的简单文字条目。其他格式请手动添加；扫描图片暂不支持。</p></details>';
   return text+'</div>';
 }
 function renderImport(){
-  main.innerHTML=heading('让你的课表，来到这里。','从教务系统导出，再在手机上轻松查看。')+'<div class="import-layout"><div><section class="upload-card"><button class="upload-zone" data-action="upload" '+(importState?.busy?'disabled':'')+'><span class="upload-icon">'+icon('import')+'</span><strong>选择个人课表 PDF</strong><small>点击上传，或拖动文件到这里<br>支持文字版 PDF / 本应用 JSON 备份 · 最大 10 MB</small></button><p class="local-privacy">'+icon('shield')+' PDF 在本机读取，不上传文件</p><div class="import-bottom">'+button(icon('download')+'导出当前备份','backup','secondary-btn')+'<a class="secondary-btn" href="https://jwxt.shu.edu.cn" target="_blank" rel="noopener noreferrer">打开学校教务系统 '+icon('arrow')+'</a></div><div class="alert-box">已适配上海大学个人课表的横向表格版，支持指定周次和跨行文字。文件在本机读取，无需在本应用输入学校密码。</div></section>'+resultHtml()+'</div><aside class="white-card"><h3>三步，把课表装进口袋</h3><div class="step"><span class="step-number">01</span><div><h4>登录学校教务系统</h4><p>在学校网站登录，打开个人课表。<br><a href="https://jwxt.shu.edu.cn" target="_blank" rel="noopener noreferrer">前往上海大学教务系统 ↗</a></p></div></div><div class="step"><span class="step-number">02</span><div><h4>导出课表 PDF</h4><p>使用系统的导出功能，保存到手机的下载文件夹。</p></div></div><div class="step"><span class="step-number">03</span><div><h4>读取并确认</h4><p>选择文件，检查识别结果，确认后替换当前课表。</p></div></div><p class="fine-print">学校课程有调整时，请重新导出并导入。正式使用前需校准学期起始日和学校作息。</p><a class="inline-link" href="https://bksy.shu.edu.cn/index/jxgl1/jwglxt.htm" target="_blank" rel="noopener noreferrer">学校官方入口说明 ↗</a></aside></div>';
+  main.innerHTML=heading('让你的课表，来到这里。','从你学校的教务系统导出，再在手机上查看。')+'<div class="import-layout"><div><section class="upload-card"><button class="upload-zone" data-action="upload" '+(importState?.busy?'disabled':'')+'><span class="upload-icon">'+icon('import')+'</span><strong>选择课表文件</strong><small>点击选择，或拖动文件到这里<br>文字版 PDF / Kim课表 JSON 备份 · 最大 10 MB</small></button><p class="local-privacy">'+icon('shield')+' PDF 在本机读取，不上传文件</p><div class="import-bottom">'+button(icon('download')+'导出当前备份','backup','secondary-btn')+button(icon('plus')+'手动添加课程','add','secondary-btn')+'</div><div class="alert-box">当前支持带星期列和 12 节编号的横向文字表格，以及同一行包含课程名、星期和节次的简单文字条目。不同学校的格式可能无法识别，可手动添加课程；扫描图片暂不支持。</div></section>'+resultHtml()+'</div><aside class="white-card"><h3>三步，把课表装进口袋</h3><div class="step"><span class="step-number">01</span><div><h4>打开你学校的教务系统</h4><p>在学校网站登录，打开个人课表。无需在 Kim课表输入学校密码。</p></div></div><div class="step"><span class="step-number">02</span><div><h4>导出文字版课表 PDF</h4><p>使用教务系统的导出功能。无法导出或格式不支持时，可以手动添加。</p></div></div><div class="step"><span class="step-number">03</span><div><h4>读取并确认</h4><p>选择文件，检查名称、教室、节次和周次，确认后替换当前课表。</p></div></div><p class="fine-print">学校课程有调整时，请重新导出并导入。使用前请在设置中填写学校、学期起始日和每日作息。备忘录会随 JSON 备份一起恢复。</p></aside></div>';
+}
+function timeFields(times){
+  return times.map((t,i)=>'<label class="time-fields"><span>'+(i+1)+'节</span><input type="time" name="time-start-'+i+'" value="'+esc(t[0])+'" required aria-label="第'+(i+1)+'节开始时间"><input type="time" name="time-end-'+i+'" value="'+esc(t[1])+'" required aria-label="第'+(i+1)+'节结束时间"></label>').join('');
 }
 function renderSettings(){
   const s=state.settings;
-  main.innerHTML=heading('按你的节奏，来安排。','学期、作息和课表数据，都在这里管理。')+'<div class="content-column"><form id="settings-form" class="settings-card"><h3>学期与作息</h3><div class="form-grid"><label class="field full">学期名称<input name="term" maxlength="60" required value="'+esc(s.term)+'"></label><label class="field">第 1 周的星期一<input type="date" name="startDate" required value="'+s.startDate+'"></label><label class="field">学期总周数<input type="number" name="totalWeeks" min="1" max="30" required value="'+s.totalWeeks+'"></label></div><p class="fine-print">初始日期与作息均为示例，请按学校校历和作息表修改。第一周起始日必须是星期一。</p><details><summary>修改每天 12 节的作息时间</summary><div style="margin-top:12px">'+s.times.map((t,i)=>'<label class="time-fields"><span>'+(i+1)+'节</span><input type="time" name="time-start-'+i+'" value="'+t[0]+'" required aria-label="第'+(i+1)+'节开始时间"><input type="time" name="time-end-'+i+'" value="'+t[1]+'" required aria-label="第'+(i+1)+'节结束时间"></label>').join('')+'</div></details><div class="form-footer">'+button('保存设置','submit-settings','primary-btn')+'</div></form><section class="settings-card"><h3>我的课表数据</h3><div class="settings-row"><div><h4>导出课表备份</h4><p>保存课程、备忘录、学期和作息，方便迁移或恢复。</p></div>'+button('导出 JSON','backup','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复备份 / 导入 PDF</h4><p>先预览并确认，再替换已有课表。</p></div>'+button('前往导入','goto-import','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复示例课表</h4><p>替换为演示课程，同时恢复示例学期与作息。</p></div>'+button('恢复示例','reset-demo','danger-btn')+'</div></section><section class="settings-card"><h3>像 App 一样打开</h3><div class="install-banner"><p class="install-info">在安卓 Chrome 浏览器打开本页，点右上角菜单，选择“添加到主屏幕”或“安装应用”，就能从手机桌面打开。</p>'+(deferredInstall?button('添加到手机桌面','install','primary-btn','style="margin-top:14px"'):'')+'</div><p class="fine-print">这是手机网页版 demo。个人课表仅保存在当前浏览器；清除浏览器数据会移除保存的课程和备忘录。建议定期导出备份。</p></section></div>';
+  main.innerHTML=heading('按你的节奏，来安排。','学校、学期、作息和课表数据，都在这里管理。')+'<div class="content-column"><form id="settings-form" class="settings-card"><h3>学校、学期与作息</h3><div class="form-grid"><label class="field full">学校名称<input name="school" maxlength="60" required placeholder="我的学校" value="'+esc(s.school)+'"></label><label class="field full">学期名称<input name="term" maxlength="60" required value="'+esc(s.term)+'"></label><label class="field">第 1 周的星期一<input type="date" name="startDate" required value="'+s.startDate+'"></label><label class="field">学期总周数<input type="number" name="totalWeeks" min="1" max="30" required value="'+s.totalWeeks+'"></label><label class="field full">每天的节数<select name="periodCount">'+options(6,16,s.times.length,' 节')+'</select></label></div><p class="fine-print">请按你学校的校历与作息表修改。第一周起始日必须是星期一；新增节次请填写时间，已有课程使用的节次不能被移除。</p><details><summary>修改每天 <span id="period-count-label">'+s.times.length+'</span> 节的作息时间</summary><div id="time-fields" style="margin-top:12px">'+timeFields(s.times)+'</div></details><div class="form-footer">'+button('保存设置','submit-settings','primary-btn')+'</div></form><section class="settings-card"><h3>我的课表数据</h3><div class="settings-row"><div><h4>导出课表备份</h4><p>保存课程、备忘录、学校、学期和作息，方便迁移或恢复。</p></div>'+button('导出 JSON','backup','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复备份 / 导入 PDF</h4><p>先预览并确认，再替换已有课表。兼容旧版备份。</p></div>'+button('前往导入','goto-import','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复示例课表</h4><p>替换为演示课程，恢复示例学期与作息，保留学校名称与备忘录。</p></div>'+button('恢复示例','reset-demo','danger-btn')+'</div></section><section class="settings-card"><h3>像 App 一样打开</h3><div class="install-banner"><p class="install-info">在安卓 Chrome 浏览器打开本页，点右上角菜单，选择“添加到主屏幕”或“安装应用”，就能从手机桌面打开。</p>'+(deferredInstall?button('添加到手机桌面','install','primary-btn','style="margin-top:14px"'):'')+'</div><p class="fine-print">这是手机网页版 demo。个人课表与备忘录保存在当前浏览器；清除浏览器数据会移除保存内容。建议定期导出备份。</p></section></div>';
 }
 function render(){
   renderNav();
@@ -145,18 +154,19 @@ function showDetail(id){
 function options(start,end,value,suffix=''){let out='';for(let n=start;n<=end;n++)out+='<option value="'+n+'" '+(n===value?'selected':'')+'>'+n+suffix+'</option>';return out;}
 function editCourse(id=null,candidateIndex=null){
   const c=candidateIndex!==null?importState.courses[candidateIndex]:state.courses.find(c=>c.id===id)||{name:'',day:dayOf(selectedDate),start:1,end:2,weekFrom:1,weekTo:state.settings.totalWeeks,parity:'all',room:'',teacher:'',color:'sage',note:''};
+  const periodCount=candidateIndex!==null?(importState.type==='json'?importState.settings.times.length:16):state.settings.times.length;
   if(sheet.open)sheet.close();
   openSheet(candidateIndex!==null?'确认候选课程':id?'编辑课程':'添加课程',
-    '<form id="course-form" data-id="'+esc(id||'')+'" data-candidate="'+(candidateIndex??'')+'"><div class="form-grid"><label class="field full">课程名称<input name="name" required maxlength="80" placeholder="例如：高等数学 A" value="'+esc(c.name)+'"></label><label class="field full">星期<select name="day">'+DAYS.map((d,i)=>'<option value="'+(i+1)+'" '+(c.day===i+1?'selected':'')+'>星期'+d+'</option>').join('')+'</select></label><label class="field">开始节次<select name="start">'+options(1,12,c.start,'节')+'</select></label><label class="field">结束节次<select name="end">'+options(1,12,c.end,'节')+'</select></label><label class="field">开始周次<input name="weekFrom" type="number" min="1" max="30" value="'+c.weekFrom+'" required></label><label class="field">结束周次<input name="weekTo" type="number" min="1" max="30" value="'+c.weekTo+'" required></label><label class="field full">单双周<select name="parity"><option value="all" '+(c.parity==='all'?'selected':'')+'>每周上课</option><option value="odd" '+(c.parity==='odd'?'selected':'')+'>仅单周</option><option value="even" '+(c.parity==='even'?'selected':'')+'>仅双周</option></select></label><label class="field full">指定周次（选填，优先于开始/结束周次）<input name="weekSpec" maxlength="100" placeholder="例如 1-2,4-16 或 4,8,12,16" value="'+esc(formatWeekSpec(c.weeks).replace(/、/g,','))+'"></label><label class="field">教室<input name="room" maxlength="100" placeholder="A 教学楼 203" value="'+esc(c.room)+'"></label><label class="field">教师<input name="teacher" maxlength="60" placeholder="教师姓名" value="'+esc(c.teacher)+'"></label><label class="field full">备注<textarea name="note" maxlength="1000" placeholder="给这门课留一点备忘">'+esc(c.note)+'</textarea></label><div class="field full">课程颜色<div class="color-options">'+COLORS.map(color=>'<button type="button" class="color-option color-'+color+' '+(color===c.color?'selected':'')+'" data-action="pick-color" data-color="'+color+'" aria-label="'+({sage:'草绿',lavender:'浅紫',peach:'浅橙',blue:'浅蓝',rose:'浅粉',yellow:'浅黄'}[color])+'色" aria-pressed="'+(color===c.color)+'"></button>').join('')+'</div><input type="hidden" name="color" value="'+c.color+'"></div></div><div class="form-footer">'+button('取消','close-sheet','secondary-btn')+'<button type="submit" class="primary-btn">保存课程</button></div></form>');
+    '<form id="course-form" data-id="'+esc(id||'')+'" data-candidate="'+(candidateIndex??'')+'"><div class="form-grid"><label class="field full">课程名称<input name="name" required maxlength="80" placeholder="例如：高等数学 A" value="'+esc(c.name)+'"></label><label class="field full">星期<select name="day">'+DAYS.map((d,i)=>'<option value="'+(i+1)+'" '+(c.day===i+1?'selected':'')+'>星期'+d+'</option>').join('')+'</select></label><label class="field">开始节次<select name="start">'+options(1,periodCount,c.start,'节')+'</select></label><label class="field">结束节次<select name="end">'+options(1,periodCount,c.end,'节')+'</select></label><label class="field">开始周次<input name="weekFrom" type="number" min="1" max="30" value="'+c.weekFrom+'" required></label><label class="field">结束周次<input name="weekTo" type="number" min="1" max="30" value="'+c.weekTo+'" required></label><label class="field full">单双周<select name="parity"><option value="all" '+(c.parity==='all'?'selected':'')+'>每周上课</option><option value="odd" '+(c.parity==='odd'?'selected':'')+'>仅单周</option><option value="even" '+(c.parity==='even'?'selected':'')+'>仅双周</option></select></label><label class="field full">指定周次（选填，优先于开始/结束周次）<input name="weekSpec" maxlength="100" placeholder="例如 1-2,4-16 或 4,8,12,16" value="'+esc(formatWeekSpec(c.weeks).replace(/、/g,','))+'"></label><label class="field">教室<input name="room" maxlength="100" placeholder="A 教学楼 203" value="'+esc(c.room)+'"></label><label class="field">教师<input name="teacher" maxlength="60" placeholder="教师姓名" value="'+esc(c.teacher)+'"></label><label class="field full">备注<textarea name="note" maxlength="1000" placeholder="给这门课留一点备忘">'+esc(c.note)+'</textarea></label><div class="field full">课程颜色<div class="color-options">'+COLORS.map(color=>'<button type="button" class="color-option color-'+color+' '+(color===c.color?'selected':'')+'" data-action="pick-color" data-color="'+color+'" aria-label="'+({sage:'草绿',lavender:'浅紫',peach:'浅橙',blue:'浅蓝',rose:'浅粉',yellow:'浅黄'}[color])+'色" aria-pressed="'+(color===c.color)+'"></button>').join('')+'</div><input type="hidden" name="color" value="'+c.color+'"></div></div><div class="form-footer">'+button('取消','close-sheet','secondary-btn')+'<button type="submit" class="primary-btn">保存课程</button></div></form>');
 }
 function backup(){
-  const data={format:'shu-timetable-v1',savedAt:new Date().toISOString(),settings:state.settings,courses:state.courses,memos:state.memos};
+  const data={format:'kim-timetable-v1',savedAt:new Date().toISOString(),settings:state.settings,courses:state.courses,memos:state.memos};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download='上大课表备份-'+localDate()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('课表备份已生成');
+  const a=document.createElement('a');a.href=url;a.download='Kim课表备份-'+localDate()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('课表备份已生成');
 }
 function confirmReplace(kind){
   if(sheet.open)sheet.close();
-  openSheet(kind==='demo'?'恢复示例课表':'确认替换当前课表','<p class="install-info">'+(kind==='demo'?'当前课程、学期与作息将恢复为演示数据，备忘录会保留。':'已选择的课程将替换当前课表。请确认你已检查所有时间和周次。'+(importState?.memos!==undefined?' 当前备忘录也将替换为备份中的 '+importState.memos.length+' 条。':'现有备忘录会保留。'))+'操作前可导出备份。</p><div class="form-footer">'+button('导出备份','backup','secondary-btn')+button('取消','close-sheet','secondary-btn')+button('确认替换',kind==='demo'?'do-reset':'do-import','primary-btn')+'</div>');
+  openSheet(kind==='demo'?'恢复示例课表':'确认替换当前课表','<p class="install-info">'+(kind==='demo'?'当前课程、学期与作息将恢复为演示数据，学校名称与备忘录会保留。':'已选择的课程将替换当前课表。请确认你已检查所有时间和周次。'+(importState?.memos!==undefined?' 当前备忘录也将替换为备份中的 '+importState.memos.length+' 条。':'现有备忘录会保留。'))+'操作前可导出备份。</p><div class="form-footer">'+button('导出备份','backup','secondary-btn')+button('取消','close-sheet','secondary-btn')+button('确认替换',kind==='demo'?'do-reset':'do-import','primary-btn')+'</div>');
 }
 async function readFile(file){
   if(!file)return;
@@ -179,14 +189,14 @@ async function readFile(file){
       for(let n=1;n<=pdf.numPages;n++){
         const page=await pdf.getPage(n),content=await page.getTextContent();
         const items=pageItems(content.items,page.getViewport({scale:1}).transform);
-        const table=parseShuPage(items);
+        const table=parseTimetablePage(items);
         if(table.supported)tableResults.push(table);
         texts.push(textLines(items));
         page.cleanup();
       }
       const text=texts.join('\n\n').slice(0,150000),parsed=tableResults.length?{courses:tableResults.flatMap(t=>t.courses),errors:tableResults.flatMap(t=>t.errors)}:parseCourseLines(text);
       if(parsed.courses.length>300)throw new Error('识别课程超过 300 条，请选择个人课表。');
-      importState={filename:file.name,type:'pdf',pages:pdf.numPages,text,courses:parsed.courses,unrecognized:parsed.unrecognized,errors:parsed.errors,adapter:tableResults.length?'上海大学个人课表':''};
+      importState={filename:file.name,type:'pdf',pages:pdf.numPages,text,courses:parsed.courses,unrecognized:parsed.unrecognized,errors:parsed.errors,adapter:tableResults.length?'12 节横向表格识别':''};
     }else throw new Error('请选择 PDF 或本应用导出的 JSON 备份。');
   }catch(err){
     importState={error:err.name==='PasswordException'?'此 PDF 已加密，请先导出未加密的课表。':err.message||'读取失败，请重新导出后重试。'};
@@ -248,7 +258,7 @@ document.addEventListener('click',async(event)=>{
       persist({...state,courses,settings,memos:importState.memos??state.memos,demo:false});selectedWeek=clampWeek(weekOf(localDate(),settings));sheet.close();importState=null;navigate('week');toast('已保存 '+courses.length+' 条课程');
     }
     else if(action==='reset-demo')confirmReplace('demo');
-    else if(action==='do-reset'){persist({...state,courses:clone(DEMO_COURSES),settings:clone(DEFAULT_SETTINGS),demo:true});selectedWeek=clampWeek(weekOf(localDate(),state.settings));sheet.close();render();toast('已恢复示例课表');}
+    else if(action==='do-reset'){persist({...state,courses:clone(DEMO_COURSES),settings:{...clone(DEFAULT_SETTINGS),school:state.settings.school},demo:true});selectedWeek=clampWeek(weekOf(localDate(),state.settings));sheet.close();render();toast('已恢复示例课表');}
     else if(action==='submit-settings')document.querySelector('#settings-form').requestSubmit();
     else if(action==='install'&&deferredInstall){await deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;render();}
   }catch(err){toast(err.message);}
@@ -279,15 +289,26 @@ document.addEventListener('submit',(event)=>{
       }
       sheet.close();render();toast('课程已保存');
     }else{
-      const times=Array.from({length:12},(_,i)=>[data['time-start-'+i],data['time-end-'+i]]);
+      const count=Number(data.periodCount);
+      const times=Array.from({length:count},(_,i)=>[data['time-start-'+i],data['time-end-'+i]]);
       const settings=normalizeSettings({...state.settings,...data,times});
       // Form-only fields must not be persisted.
       Object.keys(settings).filter(k=>k.startsWith('time-')).forEach(k=>delete settings[k]);
+      delete settings.periodCount;
       persist({...state,settings});selectedWeek=clampWeek(selectedWeek);render();toast('学期与作息已更新');
     }
   }catch(err){toast(err.message);}
 });
-document.addEventListener('change',event=>{if(event.target.matches('[data-candidate]')){importState.courses[Number(event.target.dataset.candidate)].selected=event.target.checked;}});
+document.addEventListener('change',event=>{
+  if(event.target.matches('[data-candidate]'))importState.courses[Number(event.target.dataset.candidate)].selected=event.target.checked;
+  if(event.target.matches('#settings-form [name="periodCount"]')){
+    const form=event.target.form,count=Number(event.target.value);
+    const times=Array.from({length:count},(_,i)=>[form.elements['time-start-'+i]?.value||'',form.elements['time-end-'+i]?.value||'']);
+    form.querySelector('#time-fields').innerHTML=timeFields(times);
+    form.querySelector('#period-count-label').textContent=count;
+    form.querySelector('#time-fields').closest('details').open=true;
+  }
+});
 document.addEventListener('dragover',event=>{const zone=event.target.closest('.upload-zone');if(zone){event.preventDefault();zone.classList.add('dragover');}});
 document.addEventListener('dragleave',event=>event.target.closest('.upload-zone')?.classList.remove('dragover'));
 document.addEventListener('drop',event=>{if(event.target.closest('.upload-zone')){event.preventDefault();if(!importState?.busy)readFile(event.dataTransfer.files[0]);}});

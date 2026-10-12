@@ -16,7 +16,9 @@ export function textLines(items){
   }
   return rows.sort((a,b)=>a.y-b.y).map(row=>row.items.sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ')).join('\n');
 }
-export function parseShuPage(items){
+// This adapter handles a seven-day landscape table with twelve numbered rows.
+// Other text PDFs may be recognized by the line parser or entered manually.
+export function parseTimetablePage(items){
   const dayHeaders=items.filter(i=>/^星期[一二三四五六日天]$/.test(i.text.trim())).sort((a,b)=>a.x-b.x);
   if(dayHeaders.length!==7||dayHeaders.some((i,n)=>i.text.trim()!=='星期'+['一','二','三','四','五','六','日'][n]))return {supported:false,courses:[],errors:[]};
   const headerY=dayHeaders.reduce((sum,i)=>sum+i.y,0)/7,centers=dayHeaders.map(i=>i.x+i.width/2);
@@ -35,6 +37,7 @@ export function parseShuPage(items){
     try{
       const day=column(marker),clean=marker.text.replace(/\s/g,''),period=clean.match(/[（(](\d{1,2})-(\d{1,2})节[）)]/);
       const start=Number(period[1]),end=Number(period[2]);
+      if(start<1||end>12||start>end)throw new Error('横向表格识别仅支持第 1–12 节');
       // Exported tables have merged cells and uneven row heights. The bold
       // course headings identify cell boundaries more reliably than period centers.
       const columnMarkers=markers.filter(i=>column(i)===day).sort((a,b)=>a.y-b.y);

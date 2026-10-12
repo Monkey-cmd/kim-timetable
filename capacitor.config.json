@@ -1,6 +1,6 @@
 {
-  "appId": "cn.shu.pocket.timetable",
-  "appName": "上大课表",
+  "appId": "com.kim.timetable",
+  "appName": "Kim课表",
   "webDir": "www",
   "backgroundColor": "#f6f7f3",
   "server": { "errorPath": "webview-upgrade.html" },

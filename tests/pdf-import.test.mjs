@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pageItems,parseShuPage} from '../www/pdf-import.js';
+import {pageItems,parseTimetablePage} from '../www/pdf-import.js';
 const labels=['一','二','三','四','五','六','日'];
 const item=(text,x,y,height=8)=>({text,x,y,height,width:Math.min(80,text.length*4)});
 const headers=labels.map((d,i)=>({...item('星期'+d,100+i*100,50,12),width:36}));
@@ -15,11 +15,22 @@ test('merged cells do not mix prior metadata into new course titles',()=>{
     item('测试课程B',200,151,9),item('(TEST00002)',200,164,9),item('(3-4节)第6周/校区:测试校区',200,177),
     item('/场地:B202/教师:另',200,190),item('一教师/选课备注:/学分:1.0',200,202)
   ];
-  const parsed=parseShuPage(items);
+  const parsed=parseTimetablePage(items);
   assert.equal(parsed.supported,true);assert.equal(parsed.courses.length,2);assert.deepEqual(parsed.errors,[]);
   assert.equal(parsed.courses[0].teacher,'测试教师');
   assert.equal(parsed.courses[1].name,'测试课程B');
   assert.equal(parsed.courses[1].room,'B202');
   assert.deepEqual(parsed.courses[1].weeks,[6]);
   assert.equal(parsed.courses[0].weeks.includes(3),false);
+});
+
+test('table recognition stays limited to the validated twelve-row layout',()=>{
+  assert.equal(parseTimetablePage([...headers,...periods.slice(0,10)]).supported,false);
+  const parsed=parseTimetablePage([...headers,...periods,
+    item('超出表格节次的课程',200,80,9),item('(13-14节)1-16周/场地:A101/教师:测试',200,106)
+  ]);
+  assert.equal(parsed.supported,true);
+  assert.equal(parsed.courses.length,0);
+  assert.equal(parsed.errors.length,1);
+  assert.match(parsed.errors[0].message,/1–12/);
 });

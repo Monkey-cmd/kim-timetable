@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_SETTINGS,addDays,weekOf,weekStart,dayOf,activeInWeek,normalizeCourse,normalizeSettings,courseConflicts,parseCourseLines,importBackup,parseWeekSpec,formatWeekSpec} from '../www/core.js';
+import {DEFAULT_SETTINGS,addDays,weekOf,weekStart,dayOf,activeInWeek,normalizeCourse,normalizeSettings,validateCoursePeriods,courseConflicts,parseCourseLines,importBackup,parseWeekSpec,formatWeekSpec} from '../www/core.js';
 import {normalizeMemo} from '../www/memos.js';
 const sample=(changes={})=>normalizeCourse({name:'测试课程',day:1,start:1,end:2,weekFrom:1,weekTo:18,...changes});
 test('date arithmetic works across month, year and leap day boundaries',()=>{
@@ -70,4 +70,35 @@ test('backups distinguish absent memos from an explicit list and preserve memo-o
   assert.deepEqual(restored.memos,[m]);
   assert.deepEqual(importBackup(JSON.stringify({courses:[],memos:[]})).memos,[]);
   assert.throws(()=>importBackup(JSON.stringify({courses:[sample()],memos:[{title:'错误日期',dueDate:'2026-02-30'}]})));
+});
+
+test('daily periods support 6–16 rows and cannot hide an existing course',()=>{
+  const six=normalizeSettings({...DEFAULT_SETTINGS,times:DEFAULT_SETTINGS.times.slice(0,6)});
+  assert.doesNotThrow(()=>validateCoursePeriods([sample({end:6})],six));
+  assert.throws(()=>validateCoursePeriods([sample({end:7})],six),/测试课程/);
+  const hhmm=mins=>String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');
+  const times=Array.from({length:16},(_,i)=>[hhmm(480+i*50),hhmm(520+i*50)]);
+  const sixteen=normalizeSettings({...DEFAULT_SETTINGS,times});
+  const late=sample({start:15,end:16});
+  assert.doesNotThrow(()=>validateCoursePeriods([late],sixteen));
+  assert.throws(()=>sample({end:17}));
+  assert.throws(()=>normalizeSettings({...DEFAULT_SETTINGS,times:times.slice(0,5)}));
+  assert.throws(()=>normalizeSettings({...DEFAULT_SETTINGS,times:[...times,['22:00','22:40']]}));
+  assert.throws(()=>importBackup(JSON.stringify({courses:[late],settings:six})));
+  assert.equal(importBackup(JSON.stringify({courses:[late],settings:sixteen})).courses[0].end,16);
+  assert.equal(parseCourseLines('晚间自习 周三 第15-16节 1-18周').courses[0].end,16);
+});
+
+test('old and Kim backups preserve school, exact teaching weeks and memo identity',()=>{
+  const m=normalizeMemo({id:'legacy-memo',title:'考试前复习',completed:true,dueDate:'2026-11-01'});
+  const courses=[sample({weeks:[2,4,8]})],settings={...DEFAULT_SETTINGS,school:'另一所学校'};
+  for(const format of ['shu-timetable-v1','kim-timetable-v1']){
+    const restored=importBackup(JSON.stringify({format,courses,settings,memos:[m]}));
+    assert.equal(restored.settings.school,'另一所学校');
+    assert.deepEqual(restored.courses[0].weeks,[2,4,8]);
+    assert.deepEqual(restored.memos,[m]);
+  }
+  assert.equal(normalizeSettings({...DEFAULT_SETTINGS,school:'  我的学院  '}).school,'我的学院');
+  assert.equal(normalizeSettings({...DEFAULT_SETTINGS,school:''}).school,'我的学校');
+  assert.equal(importBackup(JSON.stringify({courses:[]})).settings.school,'我的学校');
 });

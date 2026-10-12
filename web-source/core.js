@@ -6,7 +6,7 @@ export const DEFAULT_TIMES = [
   ['13:00','13:45'],['13:55','14:40'],['15:00','15:45'],['15:55','16:40'],
   ['18:00','18:45'],['18:55','19:40'],['19:50','20:35'],['20:45','21:30']
 ];
-export const DEFAULT_SETTINGS = { school:'上海大学',term:'2026–2027 秋季学期',startDate:'2026-09-14',totalWeeks:18,times:DEFAULT_TIMES };
+export const DEFAULT_SETTINGS = { school:'我的学校',term:'2026–2027 秋季学期',startDate:'2026-09-14',totalWeeks:18,times:DEFAULT_TIMES };
 export const DEMO_COURSES = [
   {id:'demo-1',name:'高等数学 A',day:1,start:1,end:2,weekFrom:1,weekTo:16,parity:'all',room:'A 教学楼 203',teacher:'陈老师',color:'sage',note:'示例课程，请以个人课表为准。'},
   {id:'demo-2',name:'大学英语',day:1,start:5,end:6,weekFrom:1,weekTo:16,parity:'all',room:'C 教学楼 301',teacher:'李老师',color:'lavender'},
@@ -68,7 +68,7 @@ export function normalizeCourse(raw,index=0) {
   };
   if(!c.name) throw new Error('请填写课程名称');
   if(!Number.isInteger(c.day)||c.day<1||c.day>7) throw new Error('星期必须在 1–7 之间');
-  if(!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<1||c.end>12||c.start>c.end) throw new Error('节次必须在 1–12 之间，结束节次不能早于开始');
+  if(!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<1||c.end>16||c.start>c.end) throw new Error('节次必须在 1–16 之间，结束节次不能早于开始');
   if(!Number.isInteger(c.weekFrom)||!Number.isInteger(c.weekTo)||c.weekFrom<1||c.weekTo>30||c.weekFrom>c.weekTo) throw new Error('课程周次必须在 1–30 之间');
   if(!['all','odd','even'].includes(c.parity)) throw new Error('单双周设置无效');
   if(raw.weeks!=null){
@@ -87,7 +87,8 @@ export function normalizeSettings(raw) {
   s.totalWeeks=Number(s.totalWeeks);
   if(!Number.isInteger(s.totalWeeks)||s.totalWeeks<1||s.totalWeeks>30) throw new Error('学期周数必须在 1–30 之间');
   s.term=String(s.term||'我的学期').slice(0,60);
-  if(!Array.isArray(s.times)||s.times.length!==12) throw new Error('需要 12 节的作息时间');
+  s.school=String(s.school||'我的学校').trim().slice(0,60)||'我的学校';
+  if(!Array.isArray(s.times)||s.times.length<6||s.times.length>16) throw new Error('每天需要 6–16 节的作息时间');
   let previousEnd=-1;
   for(const t of s.times){
     if(!Array.isArray(t)||t.length!==2||t.some(v=>!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v))) throw new Error('作息时间无效');
@@ -96,6 +97,10 @@ export function normalizeSettings(raw) {
     previousEnd=end;
   }
   return s;
+}
+export function validateCoursePeriods(courses,settings) {
+  const invalid=courses.find(c=>c.end>settings.times.length);
+  if(invalid) throw new Error('“'+invalid.name+'”使用第 '+invalid.end+' 节，请先增加每天节数或调整这门课程');
 }
 export function timeMinutes(time){ return Number(time.split(':')[0])*60+Number(time.split(':')[1]); }
 export function courseConflicts(courses) {
@@ -115,7 +120,9 @@ export function importBackup(text) {
   const courses=data.courses.map(normalizeCourse);
   // Give each row a fresh identity to avoid duplicate or user-supplied identifiers.
   courses.forEach(c=>c.id=crypto.randomUUID());
-  return {courses,settings:normalizeSettings(data.settings||DEFAULT_SETTINGS),...(data.memos!==undefined?{memos:normalizeMemos(data.memos)}:{})};
+  const settings=normalizeSettings(data.settings||DEFAULT_SETTINGS);
+  validateCoursePeriods(courses,settings);
+  return {courses,settings,...(data.memos!==undefined?{memos:normalizeMemos(data.memos)}:{})};
 }
 export function parseCourseLines(text) {
   const courses=[], unrecognized=[];
