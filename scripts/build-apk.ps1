@@ -66,7 +66,7 @@ try {
 } finally { Pop-Location }
 $builtApk = Join-Path $stagingRoot 'android/app/build/outputs/apk/debug/app-debug.apk'
 if (-not (Test-Path -LiteralPath $builtApk)) { throw 'Build finished without an APK' }
-$apkPath = Join-Path $outputRoot 'kim-timetable-0.6.0-demo.apk'
+$apkPath = Join-Path $outputRoot 'kim-timetable-0.6.1-demo.apk'
 Copy-Item -LiteralPath $builtApk -Destination $apkPath -Force
 $buildTools = Get-ChildItem -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -Directory | Sort-Object Name -Descending | Select-Object -First 1
 & (Join-Path $buildTools.FullName 'apksigner.bat') verify --verbose $apkPath
