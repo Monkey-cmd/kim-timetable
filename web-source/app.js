@@ -1,6 +1,7 @@
 import {COLORS,DAYS,DEFAULT_SETTINGS,DEFAULT_TIMES,DEMO_COURSES,clone,localDate,dateFrom,addDays,weekOf,dayOf,weekStart,activeInWeek,coursesOn,normalizeCourse,normalizeSettings,validateCoursePeriods,timeMinutes,courseConflicts,importBackup,parseCourseLines,parseWeekSpec,formatWeekSpec} from './core.js';
 import {pageItems,textLines,parseTimetablePage} from './pdf-import.js';
 import {normalizeMemo,normalizeMemos,memoStatus,sortMemos} from './memos.js';
+import {adjustSelection,dragPeriodDelta} from './course-selection.js';
 
 const KEY='kim-timetable-v1',LEGACY_KEY='shu-timetable-demo-v1';
 const main=document.querySelector('#main'),sheet=document.querySelector('#sheet'),fileInput=document.querySelector('#file-input');
@@ -41,6 +42,7 @@ try{
 }catch{storageWarning='本机保存的数据无法读取，已显示示例课表。';}
 let selectedWeek=clampWeek(weekOf(localDate(),state.settings)),selectedDate=localDate();
 let route='week',showWeekends=false,importState=null,toastTimeout,deferredInstall=null,memoFilter='pending';
+let courseSelection=null,selectionDrag=null,suppressSelectionClick=false;
 const navs=[['week','课表','每周课表'],['today','今天','今日课程'],['memos','备忘录','我的备忘录'],['import','导入','导入课表'],['settings','设置','课表设置']];
 function persist(next){
   validateCoursePeriods(next.courses,next.settings);
@@ -91,8 +93,79 @@ function renderWeek(){
   const currentDay=weekOf(localDate(),state.settings)===selectedWeek?dayOf(localDate()):0;
   const visibleDays=showWeekends||courses.some(c=>c.day>5)?DAYS:DAYS.slice(0,5);
   main.innerHTML=heading('每一天，心里有数。',esc(state.settings.term)+'<span class="mobile-hide"> · 从容开始这一周</span>',button(icon('plus')+'添加课程','add','primary-btn'))+dataNotice()+
-    '<div class="week-layout"><section class="calendar-panel" aria-label="第'+selectedWeek+'周课程表"><div class="calendar-tools"><div class="week-control">'+button(icon('left'),'prev-week','icon-btn','aria-label="上一周" '+(selectedWeek===1?'disabled':''))+'<div>'+button('第 '+selectedWeek+' 周 '+icon('down'),'choose-week','week-select-btn')+'<div class="date-range">'+shortDate(start)+' — '+shortDate(end)+'</div></div>'+button(icon('right'),'next-week','icon-btn','aria-label="下一周" '+(selectedWeek===state.settings.totalWeeks?'disabled':''))+'</div><div class="calendar-actions">'+button('周末','toggle-weekends','today-btn','aria-pressed="'+showWeekends+'"')+button('本周','current-week','today-btn')+'</div></div><div class="calendar '+(visibleDays.length===5?'weekdays-only':'')+'"><div class="day-heads"><span class="month-head">'+(dateFrom(start).getMonth()+1)+'月</span>'+visibleDays.map((day,index)=>'<div class="day-head '+(index+1===currentDay?'current':'')+'"><span>周'+day+'</span><span class="day-number">'+dateFrom(addDays(start,index)).getDate()+'</span></div>').join('')+'</div><div class="schedule-body"><div class="periods" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+state.settings.times.map((t,index)=>'<div class="period" aria-label="第'+(index+1)+'节，'+t[0]+'至'+t[1]+'" title="'+t[0]+'–'+t[1]+'"><span>'+String(index+1).padStart(2,'0')+'</span><small class="period-time"><span>'+t[0]+'</span><span>–'+t[1]+'</span></small></div>').join('')+'</div><div class="course-grid" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+visibleDays.map((_,index)=>'<div class="column-bg '+(index+1===currentDay?'current':'')+'" style="grid-column:'+(index+1)+'"></div>').join('')+courses.map(c=>'<button class="course-block color-'+c.color+'" data-action="detail" data-id="'+esc(c.id)+'" style="grid-column:'+c.day+';grid-row:'+c.start+' / '+(c.end+1)+'" aria-label="'+esc(c.name)+'，周'+DAYS[c.day-1]+'，'+c.start+'至'+c.end+'节，'+esc(c.room)+'"><strong>'+esc(c.name)+'</strong><span>'+esc(c.room||'教室待填写')+'</span><span class="course-period">'+c.start+'–'+c.end+'节</span></button>').join('')+'</div></div></div><div class="calendar-legend"><span><i class="legend-dot" style="background:#adc3a3"></i>点课程查看详情</span><span><i class="legend-dot" style="background:#c7bbd6"></i>单双周自动显示</span></div></section><aside class="aside-stack">'+nextCard()+statsCard()+'<div class="tip-card"><h3>'+icon('leaf')+' 留一点时间给自己</h3><p>课间走走，喝口水。<br>忙碌的日子，也可以有自己的节奏。</p></div></aside></div>';
+    '<div class="week-layout"><section class="calendar-panel" aria-label="第'+selectedWeek+'周课程表"><div class="calendar-tools"><div class="week-control">'+button(icon('left'),'prev-week','icon-btn','aria-label="上一周" '+(selectedWeek===1?'disabled':''))+'<div>'+button('第 '+selectedWeek+' 周 '+icon('down'),'choose-week','week-select-btn')+'<div class="date-range">'+shortDate(start)+' — '+shortDate(end)+'</div></div>'+button(icon('right'),'next-week','icon-btn','aria-label="下一周" '+(selectedWeek===state.settings.totalWeeks?'disabled':''))+'</div><div class="calendar-actions">'+button('周末','toggle-weekends','today-btn','aria-pressed="'+showWeekends+'"')+button('本周','current-week','today-btn')+'</div></div><div class="calendar '+(visibleDays.length===5?'weekdays-only':'')+'"><div class="day-heads"><span class="month-head">'+(dateFrom(start).getMonth()+1)+'月</span>'+visibleDays.map((day,index)=>'<div class="day-head '+(index+1===currentDay?'current':'')+'"><span>周'+day+'</span><span class="day-number">'+dateFrom(addDays(start,index)).getDate()+'</span></div>').join('')+'</div><div class="schedule-body"><div class="periods" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+state.settings.times.map((t,index)=>'<div class="period" aria-label="第'+(index+1)+'节，'+t[0]+'至'+t[1]+'" title="'+t[0]+'–'+t[1]+'"><span>'+String(index+1).padStart(2,'0')+'</span><small class="period-time"><span>'+t[0]+'</span><span>–'+t[1]+'</span></small></div>').join('')+'</div><div class="course-grid" style="grid-template-rows:repeat('+state.settings.times.length+',var(--row))">'+visibleDays.map((_,index)=>'<div class="column-bg '+(index+1===currentDay?'current':'')+'" style="grid-column:'+(index+1)+'"></div>').join('')+visibleDays.flatMap((_,day)=>Array.from({length:state.settings.times.length},(_,period)=>courses.some(c=>c.day===day+1&&c.start<=period+1&&c.end>=period+1)?'':'<button type="button" class="empty-course-slot" data-action="select-course-range" data-day="'+(day+1)+'" data-period="'+(period+1)+'" style="grid-column:'+(day+1)+';grid-row:'+(period+1)+'" aria-label="添加课程，星期'+DAYS[day]+'，第'+(period+1)+'节"></button>')).join('')+courses.map(c=>'<button class="course-block color-'+c.color+'" data-action="detail" data-id="'+esc(c.id)+'" style="grid-column:'+c.day+';grid-row:'+c.start+' / '+(c.end+1)+'" aria-label="'+esc(c.name)+'，周'+DAYS[c.day-1]+'，'+c.start+'至'+c.end+'节，'+esc(c.room)+'"><strong>'+esc(c.name)+'</strong><span>'+esc(c.room||'教室待填写')+'</span><span class="course-period">'+c.start+'–'+c.end+'节</span></button>').join('')+'</div></div></div><div id="course-selection-hint" class="course-selection-hint" hidden><div><strong data-range-label aria-live="polite"></strong><small data-range-help></small></div>'+button('取消选择','cancel-course-range','')+'</div><div class="calendar-legend"><span><i class="legend-dot" style="background:#adc3a3"></i>点空白添加 · 点课程查看详情</span><span><i class="legend-dot" style="background:#c7bbd6"></i>单双周自动显示</span></div></section><aside class="aside-stack">'+nextCard()+statsCard()+'<div class="tip-card"><h3>'+icon('leaf')+' 留一点时间给自己</h3><p>课间走走，喝口水。<br>忙碌的日子，也可以有自己的节奏。</p></div></aside></div>';
 }
+function clearCourseSelection(){
+  courseSelection=null;selectionDrag=null;
+  main.querySelector('.course-picker')?.remove();
+  const hint=main.querySelector('#course-selection-hint');if(hint)hint.hidden=true;
+}
+function selectCourseRange(day,period){
+  clearCourseSelection();
+  courseSelection={day,start:period,end:period};
+  const picker=document.createElement('div');picker.className='course-picker';picker.setAttribute('role','group');
+  picker.innerHTML='<div class="range-handle range-start" data-selection-mode="start" role="slider" tabindex="0" aria-label="调整开始节次" aria-orientation="vertical"><i></i></div><button type="button" class="range-add" data-selection-mode="move" data-action="add-selected-course">'+icon('plus')+'</button><div class="range-handle range-end" data-selection-mode="end" role="slider" tabindex="0" aria-label="调整结束节次" aria-orientation="vertical"><i></i></div>';
+  main.querySelector('.course-grid').append(picker);
+  updateCourseSelection();
+  picker.querySelector('.range-add').focus({preventScroll:true});
+}
+function updateCourseSelection(){
+  const picker=main.querySelector('.course-picker');if(!picker||!courseSelection)return;
+  const {day,start,end}=courseSelection;
+  const conflict=state.courses.some(c=>activeInWeek(c,selectedWeek)&&c.day===day&&c.start<=end&&c.end>=start);
+  const label='星期'+DAYS[day-1]+' · '+start+'–'+end+'节 · '+state.settings.times[start-1][0]+'–'+state.settings.times[end-1][1];
+  picker.style.gridColumn=day;picker.style.gridRow=start+' / '+(end+1);
+  picker.classList.toggle('range-conflict',conflict);picker.setAttribute('aria-label',label);
+  const add=picker.querySelector('.range-add');
+  add.setAttribute('aria-label','填写课程详情，'+label);
+  // Keep the button draggable even when the selected range needs adjustment.
+  add.setAttribute('aria-disabled',String(conflict));
+  for(const mode of ['start','end']){
+    const handle=picker.querySelector('[data-selection-mode="'+mode+'"]');
+    handle.setAttribute('aria-valuemin',mode==='start'?1:start);
+    handle.setAttribute('aria-valuemax',mode==='start'?end:state.settings.times.length);
+    handle.setAttribute('aria-valuenow',mode==='start'?start:end);
+    handle.setAttribute('aria-valuetext','第'+(mode==='start'?start:end)+'节');
+  }
+  const hint=main.querySelector('#course-selection-hint');hint.hidden=false;
+  hint.querySelector('[data-range-label]').textContent=label;
+  hint.querySelector('[data-range-help]').textContent=conflict?'本周所选范围已有课程，请拖动调整。':'拖动方框移动，上下边缘调整范围；点 ＋ 填写详情。';
+}
+main.addEventListener('pointerdown',event=>{
+  const target=event.target.closest('[data-selection-mode]');
+  if(!target||!courseSelection||!event.isPrimary||event.button!==0)return;
+  const grid=main.querySelector('.course-grid');
+  selectionDrag={pointerId:event.pointerId,target,mode:target.dataset.selectionMode,fromY:event.clientY,height:grid.getBoundingClientRect().height,initial:{...courseSelection},moved:false};
+  target.setPointerCapture(event.pointerId);event.preventDefault();target.focus({preventScroll:true});
+});
+main.addEventListener('pointermove',event=>{
+  if(!selectionDrag||event.pointerId!==selectionDrag.pointerId)return;
+  if(!selectionDrag.moved&&Math.abs(event.clientY-selectionDrag.fromY)<6)return;
+  selectionDrag.moved=true;
+  courseSelection=adjustSelection(selectionDrag.initial,selectionDrag.mode,dragPeriodDelta(selectionDrag.fromY,event.clientY,selectionDrag.height,state.settings.times.length),state.settings.times.length);
+  updateCourseSelection();event.preventDefault();
+});
+function finishSelectionDrag(event){
+  if(!selectionDrag||event.pointerId!==selectionDrag.pointerId)return;
+  const drag=selectionDrag;selectionDrag=null;
+  if(event.type==='pointercancel'){courseSelection=drag.initial;updateCourseSelection();}
+  if(drag.moved||event.type==='pointercancel'){
+    suppressSelectionClick=true;
+    setTimeout(()=>{suppressSelectionClick=false;},0);
+  }
+  if(drag.target.hasPointerCapture(event.pointerId))drag.target.releasePointerCapture(event.pointerId);
+}
+main.addEventListener('pointerup',finishSelectionDrag);
+main.addEventListener('pointercancel',finishSelectionDrag);
+main.addEventListener('lostpointercapture',finishSelectionDrag);
+main.addEventListener('keydown',event=>{
+  if(!courseSelection||sheet.open)return;
+  if(event.key==='Escape'){clearCourseSelection();event.preventDefault();return;}
+  const target=event.target.closest('[data-selection-mode]');
+  if(!target||!['ArrowUp','ArrowDown'].includes(event.key))return;
+  courseSelection=adjustSelection(courseSelection,target.dataset.selectionMode,event.key==='ArrowUp'?-1:1,state.settings.times.length);
+  updateCourseSelection();event.preventDefault();
+});
 function renderToday(){
   const current=weekOf(selectedDate,state.settings),start=weekStart(current,state.settings);
   const courses=current>=1&&current<=state.settings.totalWeeks?coursesOn(state.courses,selectedDate,state.settings):[];
@@ -142,6 +215,7 @@ function renderSettings(){
   main.innerHTML=heading('按你的节奏，来安排。','学校、学期、作息和课表数据，都在这里管理。')+'<div class="content-column"><form id="settings-form" class="settings-card"><h3>学校、学期与作息</h3><div class="form-grid"><label class="field full">学校名称<input name="school" maxlength="60" required placeholder="我的学校" value="'+esc(s.school)+'"></label><label class="field full">学期名称<input name="term" maxlength="60" required value="'+esc(s.term)+'"></label><label class="field">第 1 周的星期一<input type="date" name="startDate" required value="'+s.startDate+'"></label><label class="field">学期总周数<input type="number" name="totalWeeks" min="1" max="30" required value="'+s.totalWeeks+'"></label><label class="field full">每天的节数<select name="periodCount">'+options(6,16,s.times.length,' 节')+'</select></label></div><p class="fine-print">请按你学校的校历与作息表修改。第一周起始日必须是星期一；新增节次请填写时间，已有课程使用的节次不能被移除。</p><details><summary>修改每天 <span id="period-count-label">'+s.times.length+'</span> 节的作息时间</summary><div id="time-fields" style="margin-top:12px">'+timeFields(s.times)+'</div></details><div class="form-footer">'+button('保存设置','submit-settings','primary-btn')+'</div></form><section class="settings-card"><h3>我的课表数据</h3><div class="settings-row"><div><h4>导出课表备份</h4><p>保存课程、备忘录、学校、学期和作息，方便迁移或恢复。</p></div>'+button('导出 JSON','backup','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复备份 / 导入 PDF</h4><p>先预览并确认，再替换已有课表。兼容旧版备份。</p></div>'+button('前往导入','goto-import','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复示例课表</h4><p>替换为演示课程，恢复示例学期与作息，保留学校名称与备忘录。</p></div>'+button('恢复示例','reset-demo','danger-btn')+'</div></section><section class="settings-card"><h3>像 App 一样打开</h3><div class="install-banner"><p class="install-info">在安卓 Chrome 浏览器打开本页，点右上角菜单，选择“添加到主屏幕”或“安装应用”，就能从手机桌面打开。</p>'+(deferredInstall?button('添加到手机桌面','install','primary-btn','style="margin-top:14px"'):'')+'</div><p class="fine-print">这是手机网页版 demo。个人课表与备忘录保存在当前浏览器；清除浏览器数据会移除保存内容。建议定期导出备份。</p></section></div>';
 }
 function render(){
+  courseSelection=null;selectionDrag=null;
   renderNav();
   ({week:renderWeek,today:renderToday,memos:renderMemos,import:renderImport,settings:renderSettings})[route]();
 }
@@ -152,12 +226,12 @@ function showDetail(id){
   openSheet('课程详情','<div class="course-detail-color color-'+c.color+'"><h2>'+esc(c.name)+'</h2><p>星期'+DAYS[c.day-1]+' · '+c.start+'–'+c.end+'节 · '+when(c)+'</p></div><div class="detail-row">'+icon('pin')+'<span>教室</span>'+esc(c.room||'待填写')+'</div><div class="detail-row">'+icon('person')+'<span>教师</span>'+esc(c.teacher||'待填写')+'</div><div class="detail-row">'+icon('week')+'<span>周次</span>'+weeksText(c)+'</div>'+(c.note?'<p class="detail-note">'+esc(c.note)+'</p>':'')+'<div class="form-footer">'+button('删除课程','delete-course','danger-btn','data-id="'+esc(c.id)+'"')+button('编辑课程','edit-course','primary-btn','data-id="'+esc(c.id)+'"')+'</div>');
 }
 function options(start,end,value,suffix=''){let out='';for(let n=start;n<=end;n++)out+='<option value="'+n+'" '+(n===value?'selected':'')+'>'+n+suffix+'</option>';return out;}
-function editCourse(id=null,candidateIndex=null){
-  const c=candidateIndex!==null?importState.courses[candidateIndex]:state.courses.find(c=>c.id===id)||{name:'',day:dayOf(selectedDate),start:1,end:2,weekFrom:1,weekTo:state.settings.totalWeeks,parity:'all',room:'',teacher:'',color:'sage',note:''};
+function editCourse(id=null,candidateIndex=null,preset=null){
+  const c=candidateIndex!==null?importState.courses[candidateIndex]:state.courses.find(c=>c.id===id)||{name:'',day:dayOf(selectedDate),start:1,end:2,weekFrom:1,weekTo:state.settings.totalWeeks,parity:'all',room:'',teacher:'',color:'sage',note:'',...preset};
   const periodCount=candidateIndex!==null?(importState.type==='json'?importState.settings.times.length:16):state.settings.times.length;
   if(sheet.open)sheet.close();
   openSheet(candidateIndex!==null?'确认候选课程':id?'编辑课程':'添加课程',
-    '<form id="course-form" data-id="'+esc(id||'')+'" data-candidate="'+(candidateIndex??'')+'"><div class="form-grid"><label class="field full">课程名称<input name="name" required maxlength="80" placeholder="例如：高等数学 A" value="'+esc(c.name)+'"></label><label class="field full">星期<select name="day">'+DAYS.map((d,i)=>'<option value="'+(i+1)+'" '+(c.day===i+1?'selected':'')+'>星期'+d+'</option>').join('')+'</select></label><label class="field">开始节次<select name="start">'+options(1,periodCount,c.start,'节')+'</select></label><label class="field">结束节次<select name="end">'+options(1,periodCount,c.end,'节')+'</select></label><label class="field">开始周次<input name="weekFrom" type="number" min="1" max="30" value="'+c.weekFrom+'" required></label><label class="field">结束周次<input name="weekTo" type="number" min="1" max="30" value="'+c.weekTo+'" required></label><label class="field full">单双周<select name="parity"><option value="all" '+(c.parity==='all'?'selected':'')+'>每周上课</option><option value="odd" '+(c.parity==='odd'?'selected':'')+'>仅单周</option><option value="even" '+(c.parity==='even'?'selected':'')+'>仅双周</option></select></label><label class="field full">指定周次（选填，优先于开始/结束周次）<input name="weekSpec" maxlength="100" placeholder="例如 1-2,4-16 或 4,8,12,16" value="'+esc(formatWeekSpec(c.weeks).replace(/、/g,','))+'"></label><label class="field">教室<input name="room" maxlength="100" placeholder="A 教学楼 203" value="'+esc(c.room)+'"></label><label class="field">教师<input name="teacher" maxlength="60" placeholder="教师姓名" value="'+esc(c.teacher)+'"></label><label class="field full">备注<textarea name="note" maxlength="1000" placeholder="给这门课留一点备忘">'+esc(c.note)+'</textarea></label><div class="field full">课程颜色<div class="color-options">'+COLORS.map(color=>'<button type="button" class="color-option color-'+color+' '+(color===c.color?'selected':'')+'" data-action="pick-color" data-color="'+color+'" aria-label="'+({sage:'草绿',lavender:'浅紫',peach:'浅橙',blue:'浅蓝',rose:'浅粉',yellow:'浅黄'}[color])+'色" aria-pressed="'+(color===c.color)+'"></button>').join('')+'</div><input type="hidden" name="color" value="'+c.color+'"></div></div><div class="form-footer">'+button('取消','close-sheet','secondary-btn')+'<button type="submit" class="primary-btn">保存课程</button></div></form>');
+    '<form id="course-form" data-id="'+esc(id||'')+'" data-candidate="'+(candidateIndex??'')+'"><div class="form-grid"><label class="field full">课程名称<input name="name" required maxlength="80" placeholder="例如：高等数学 A" value="'+esc(c.name)+'"></label><label class="field full">星期<select name="day">'+DAYS.map((d,i)=>'<option value="'+(i+1)+'" '+(c.day===i+1?'selected':'')+'>星期'+d+'</option>').join('')+'</select></label><label class="field">开始节次<select name="start">'+options(1,periodCount,c.start,'节')+'</select></label><label class="field">结束节次<select name="end">'+options(1,periodCount,c.end,'节')+'</select></label><label class="field">开始周次<input name="weekFrom" type="number" min="1" max="30" value="'+c.weekFrom+'" required></label><label class="field">结束周次<input name="weekTo" type="number" min="1" max="30" value="'+c.weekTo+'" required></label><label class="field full">单双周<select name="parity"><option value="all" '+(c.parity==='all'?'selected':'')+'>每周上课</option><option value="odd" '+(c.parity==='odd'?'selected':'')+'>仅单周</option><option value="even" '+(c.parity==='even'?'selected':'')+'>仅双周</option></select></label><label class="field full">指定周次（选填，优先于开始/结束周次）<input name="weekSpec" maxlength="100" placeholder="例如 1-2,4-16 或 4,8,12,16" value="'+esc(formatWeekSpec(c.weeks).replace(/、/g,','))+'"></label><label class="field">教室<input name="room" maxlength="100" placeholder="A 教学楼 203" value="'+esc(c.room)+'"></label><label class="field">教师<input name="teacher" maxlength="60" placeholder="教师姓名" value="'+esc(c.teacher)+'"></label><label class="field full">备注<textarea name="note" maxlength="1000" placeholder="给这门课留一点备忘">'+esc(c.note)+'</textarea></label><div class="field full">课程颜色<div class="color-options">'+COLORS.map(color=>'<button type="button" class="color-option color-'+color+' '+(color===c.color?'selected':'')+'" data-action="pick-color" data-color="'+color+'" aria-label="'+({sage:'草绿',lavender:'浅紫',peach:'浅橙',blue:'浅蓝',rose:'浅粉',yellow:'浅黄'}[color])+'色" aria-pressed="'+(color===c.color)+'"></button>').join('')+'</div><input type="hidden" name="color" value="'+c.color+'"></div></div><div class="course-form-error" data-form-error role="alert" hidden></div><div class="form-footer">'+button('取消','close-sheet','secondary-btn')+'<button type="submit" class="primary-btn">保存课程</button></div></form>');
 }
 function backup(){
   const data={format:'kim-timetable-v1',savedAt:new Date().toISOString(),settings:state.settings,courses:state.courses,memos:state.memos};
@@ -203,6 +277,7 @@ async function readFile(file){
   }finally{if(pdf)await pdf.destroy();render();}
 }
 document.addEventListener('click',async(event)=>{
+  if(event.target.closest('.course-picker')&&suppressSelectionClick){suppressSelectionClick=false;return;}
   const el=event.target.closest('[data-action]');if(!el)return;
   const action=el.dataset.action;
   try{
@@ -216,6 +291,12 @@ document.addEventListener('click',async(event)=>{
     else if(action.startsWith('goto-'))navigate(action.slice(5));
     else if(action==='detail')showDetail(el.dataset.id);
     else if(action==='add')editCourse();
+    else if(action==='select-course-range')selectCourseRange(Number(el.dataset.day),Number(el.dataset.period));
+    else if(action==='add-selected-course'&&courseSelection){
+      if(el.getAttribute('aria-disabled')==='true')toast('所选范围已有课程，请拖动调整。');
+      else editCourse(null,null,courseSelection);
+    }
+    else if(action==='cancel-course-range')clearCourseSelection();
     else if(action==='edit-course')editCourse(el.dataset.id);
     else if(action==='edit-candidate')editCourse(null,Number(el.dataset.index));
     else if(action==='add-memo')editMemo();
@@ -297,7 +378,10 @@ document.addEventListener('submit',(event)=>{
       delete settings.periodCount;
       persist({...state,settings});selectedWeek=clampWeek(selectedWeek);render();toast('学期与作息已更新');
     }
-  }catch(err){toast(err.message);}
+  }catch(err){
+    const error=form.querySelector('[data-form-error]');
+    if(error){error.textContent=err.message;error.hidden=false;}else toast(err.message);
+  }
 });
 document.addEventListener('change',event=>{
   if(event.target.matches('[data-candidate]'))importState.courses[Number(event.target.dataset.candidate)].selected=event.target.checked;

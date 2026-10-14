@@ -15,3 +15,19 @@
 .period{padding-top:5px;gap:2px;line-height:1.2}
 .period .period-time{display:flex;flex-direction:column;gap:1px;font-size:8px;color:#879480;line-height:1.2;white-space:nowrap}
 .period-time span:last-child{color:#96a18f}
+.empty-course-slot{z-index:0;min-width:0;min-height:0;background:transparent;border:0;border-radius:6px;cursor:pointer}
+.empty-course-slot:hover,.empty-course-slot:focus-visible{background:#e7efdf;outline:2px dashed #9ab18a;outline-offset:-3px}
+.course-picker{z-index:3;position:relative;min-width:0;min-height:0;margin:2px;border:2px solid #759664;border-radius:8px;background:#eef5e8eb;box-shadow:0 2px 8px #5a794326;touch-action:none;user-select:none}
+.range-add{width:100%;height:100%;display:grid;place-items:center;padding:0;color:#60804e;cursor:grab;touch-action:none;border-radius:6px}
+.range-add svg{width:24px;height:24px;pointer-events:none}
+.range-add:active{cursor:grabbing}
+.range-handle{position:absolute;left:0;right:0;height:14px;z-index:1;display:grid;place-items:center;cursor:ns-resize;touch-action:none}
+.range-start{top:-2px}.range-end{bottom:-2px}
+.range-handle i{display:block;width:19px;height:3px;border-radius:3px;background:#759664;pointer-events:none}
+.range-handle:focus-visible,.range-add:focus-visible{outline:2px solid #476936;outline-offset:1px}
+.range-conflict{border-color:#ba887a;background:#fff0e9eb}.range-conflict .range-add{color:#aa7668}.range-conflict .range-handle i{background:#ba887a}
+.course-selection-hint{margin:2px 14px 12px;padding:10px 12px;border-radius:9px;background:#f0f5e9;display:flex;align-items:center;gap:12px;font-size:11px;line-height:1.6}
+.course-selection-hint[hidden]{display:none}.course-selection-hint>div{flex:1;min-width:0}.course-selection-hint strong{display:block;color:#5b754a;font-weight:600}.course-selection-hint small{display:block;color:#849578;font-size:10px}
+.course-selection-hint button{flex-shrink:0;padding:8px;font-size:11px;color:#7c8d70}
+.course-form-error{padding:10px 12px;margin-top:18px;border-radius:8px;background:#fff0e9;color:#a66d5f;font-size:12px;line-height:1.7}
+@media(max-width:640px){.course-selection-hint{position:fixed;bottom:calc(84px + var(--native-bottom,env(safe-area-inset-bottom,0px)));left:calc(16px + var(--native-left,0px));right:calc(16px + var(--native-right,0px));z-index:8;margin:0;padding:9px 10px;gap:6px;font-size:10px;box-shadow:0 3px 16px #53674025;border:1px solid #dce7d2}.course-selection-hint small{font-size:9px}.course-picker{margin:2px 1px;border-radius:6px}.range-add svg{width:22px;height:22px}}
