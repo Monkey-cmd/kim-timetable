@@ -2,8 +2,10 @@ import {COLORS,DAYS,DEFAULT_SETTINGS,DEFAULT_TIMES,DEMO_COURSES,clone,localDate,
 import {pageItems,textLines,parseTimetablePage} from './pdf-import.js';
 import {normalizeMemo,normalizeMemos,memoStatus,sortMemos} from './memos.js';
 import {adjustSelection,dragPeriodDelta} from './course-selection.js';
+import {DEFAULT_APPEARANCE,THEME_PRESETS,normalizeAppearance,softenColor,themeTokens,prepareBackground} from './appearance.js';
 
 const KEY='kim-timetable-v1',LEGACY_KEY='shu-timetable-demo-v1';
+const APPEARANCE_KEY='kim-appearance-v1';
 const main=document.querySelector('#main'),sheet=document.querySelector('#sheet'),fileInput=document.querySelector('#file-input');
 const svgPaths={
   week:'<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18M8 2v4M16 2v4M8 14h2M14 14h2M8 17h2"/>',
@@ -40,6 +42,11 @@ try{
     try{state.memos=normalizeMemos(data.memos??[]);}catch{storageWarning='备忘录数据无法读取，课表已保留。请从备份恢复备忘录。';}
   }
 }catch{storageWarning='本机保存的数据无法读取，已显示示例课表。';}
+async function readAppearance(){return localStorage.getItem(APPEARANCE_KEY);}
+async function writeAppearance(value){localStorage.setItem(APPEARANCE_KEY,value);}
+let appearance={...DEFAULT_APPEARANCE},appearanceDraft,backgroundBusy=false,appearanceSaving=false;
+try{const saved=await readAppearance();if(saved)appearance=normalizeAppearance(JSON.parse(saved));}catch{storageWarning=storageWarning||'外观设置无法读取，已使用默认外观。';}
+appearanceDraft={...appearance};applyAppearance(appearance);
 let selectedWeek=clampWeek(weekOf(localDate(),state.settings)),selectedDate=localDate();
 let route='week',showWeekends=false,importState=null,toastTimeout,deferredInstall=null,memoFilter='pending';
 let courseSelection=null,selectionDrag=null,suppressSelectionClick=false;
@@ -210,12 +217,55 @@ function renderImport(){
 function timeFields(times){
   return times.map((t,i)=>'<label class="time-fields"><span>'+(i+1)+'节</span><input type="time" name="time-start-'+i+'" value="'+esc(t[0])+'" required aria-label="第'+(i+1)+'节开始时间"><input type="time" name="time-end-'+i+'" value="'+esc(t[1])+'" required aria-label="第'+(i+1)+'节结束时间"></label>').join('');
 }
+function applyAppearance(value){
+  const root=document.documentElement;
+  for(const [name,color] of Object.entries(themeTokens(value.color)))root.style.setProperty(name,color);
+  root.style.setProperty('--background-blur',value.blur+'px');
+  root.style.setProperty('--user-background',value.background?'url("'+value.background+'")':'none');
+  document.body.classList.toggle('has-background',!!value.background);
+  document.body.classList.add('themed');
+  let layer=document.querySelector('#appearance-background');
+  if(!layer){layer=document.createElement('div');layer.id='appearance-background';layer.setAttribute('aria-hidden','true');document.body.prepend(layer);}
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',themeTokens(value.color)['--bg']);
+}
+function appearanceCard(){
+  return '<form id="appearance-form" class="settings-card appearance-card"><h3>主题与背景</h3><p class="appearance-intro">柔和一点，也更像你的课表。</p><div class="theme-presets">'+THEME_PRESETS.map(([name,color])=>button('<i style="background:'+color+'"></i>'+name,'theme-preset','theme-preset','data-color="'+color+'" aria-pressed="'+(appearanceDraft.color===color)+'"')).join('')+'</div><label class="theme-color-field">自定义主题色<input name="themeColor" type="color" value="'+appearanceDraft.color+'"><span data-theme-color>'+appearanceDraft.color+'</span></label><p class="appearance-help">自选颜色会自动柔化，保持清新。</p><div class="appearance-preview" aria-label="外观预览"><div class="appearance-preview-bg"></div><div class="appearance-preview-card"><span>我的课表</span><strong>每一天，心里有数。</strong><span class="appearance-preview-accent">'+icon('plus')+' 添加课程</span></div></div><div class="appearance-background-row"><span data-background-state>'+(appearanceDraft.background?'已选择背景图片':'当前使用纯色背景')+'</span><div>'+button('选择背景图片','choose-background','secondary-btn')+button('移除','remove-background','inline-link',appearanceDraft.background?'':'hidden')+'</div></div><input id="background-input" type="file" accept="image/jpeg,image/png,image/webp" hidden><p class="appearance-help">背景图片保存在本机。支持 JPG、PNG、WebP，最大 15 MB。</p><label class="blur-field" for="background-blur">背景虚化程度<output id="blur-value">'+appearanceDraft.blur+' px</output><input id="background-blur" name="backgroundBlur" type="range" min="0" max="30" step="1" value="'+appearanceDraft.blur+'" aria-describedby="blur-help"></label><p class="appearance-help" id="blur-help">0 为清晰，30 为柔和虚化；课程文字保持清晰。</p><p class="appearance-status" data-appearance-status aria-live="polite">当前外观</p><p class="course-form-error" data-form-error role="alert" hidden></p><div class="form-footer appearance-footer">'+button('恢复默认','reset-appearance','secondary-btn')+button('取消预览','cancel-appearance','secondary-btn')+'<button type="submit" class="primary-btn">保存外观</button></div></form>';
+}
+function updateAppearancePreview(syncColor=true){
+  applyAppearance(appearanceDraft);
+  const form=main.querySelector('#appearance-form');if(!form)return;
+  if(syncColor)form.elements.themeColor.value=appearanceDraft.color;
+  form.elements.backgroundBlur.value=appearanceDraft.blur;
+  form.querySelector('[data-theme-color]').textContent=appearanceDraft.color;
+  form.querySelector('#blur-value').textContent=appearanceDraft.blur+' px';
+  form.querySelector('[data-background-state]').textContent=appearanceDraft.background?'已选择背景图片':'当前使用纯色背景';
+  form.querySelector('[data-action="remove-background"]').hidden=!appearanceDraft.background;
+  for(const preset of form.querySelectorAll('.theme-preset'))preset.setAttribute('aria-pressed',String(preset.dataset.color===appearanceDraft.color));
+  const changed=JSON.stringify(appearanceDraft)!==JSON.stringify(appearance);
+  form.querySelector('[data-appearance-status]').textContent=changed?'正在预览，点击“保存外观”保留设置':'当前外观';
+  form.querySelector('[data-form-error]').hidden=true;
+}
+document.addEventListener('input',event=>{
+  if(event.target.matches('#appearance-form [name="themeColor"]')){appearanceDraft.color=softenColor(event.target.value);updateAppearancePreview(false);}
+  if(event.target.matches('#appearance-form [name="backgroundBlur"]')){appearanceDraft.blur=Number(event.target.value);updateAppearancePreview();}
+});
+document.addEventListener('change',async event=>{
+  if(event.target.matches('#appearance-form [name="themeColor"]'))updateAppearancePreview();
+  if(event.target.id!=='background-input'||!event.target.files[0])return;
+  const form=event.target.closest('form'),file=event.target.files[0];event.target.value='';
+  backgroundBusy=true;form.querySelector('button[type="submit"]').disabled=true;
+  form.querySelector('[data-appearance-status]').textContent='正在处理图片…';
+  try{const background=await prepareBackground(file);if(form.isConnected){appearanceDraft.background=background;updateAppearancePreview();}}
+  catch(err){if(form.isConnected){const error=form.querySelector('[data-form-error]');error.textContent=err.message;error.hidden=false;form.querySelector('[data-appearance-status]').textContent='图片未更换';}}
+  finally{backgroundBusy=false;if(form.isConnected)form.querySelector('button[type="submit"]').disabled=false;}
+});
 function renderSettings(){
   const s=state.settings;
-  main.innerHTML=heading('按你的节奏，来安排。','学校、学期、作息和课表数据，都在这里管理。')+'<div class="content-column"><form id="settings-form" class="settings-card"><h3>学校、学期与作息</h3><div class="form-grid"><label class="field full">学校名称<input name="school" maxlength="60" required placeholder="我的学校" value="'+esc(s.school)+'"></label><label class="field full">学期名称<input name="term" maxlength="60" required value="'+esc(s.term)+'"></label><label class="field">第 1 周的星期一<input type="date" name="startDate" required value="'+s.startDate+'"></label><label class="field">学期总周数<input type="number" name="totalWeeks" min="1" max="30" required value="'+s.totalWeeks+'"></label><label class="field full">每天的节数<select name="periodCount">'+options(6,16,s.times.length,' 节')+'</select></label></div><p class="fine-print">请按你学校的校历与作息表修改。第一周起始日必须是星期一；新增节次请填写时间，已有课程使用的节次不能被移除。</p><details><summary>修改每天 <span id="period-count-label">'+s.times.length+'</span> 节的作息时间</summary><div id="time-fields" style="margin-top:12px">'+timeFields(s.times)+'</div></details><div class="form-footer">'+button('保存设置','submit-settings','primary-btn')+'</div></form><section class="settings-card"><h3>我的课表数据</h3><div class="settings-row"><div><h4>导出课表备份</h4><p>保存课程、备忘录、学校、学期和作息，方便迁移或恢复。</p></div>'+button('导出 JSON','backup','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复备份 / 导入 PDF</h4><p>先预览并确认，再替换已有课表。兼容旧版备份。</p></div>'+button('前往导入','goto-import','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复示例课表</h4><p>替换为演示课程，恢复示例学期与作息，保留学校名称与备忘录。</p></div>'+button('恢复示例','reset-demo','danger-btn')+'</div></section><section class="settings-card"><h3>像 App 一样打开</h3><div class="install-banner"><p class="install-info">在安卓 Chrome 浏览器打开本页，点右上角菜单，选择“添加到主屏幕”或“安装应用”，就能从手机桌面打开。</p>'+(deferredInstall?button('添加到手机桌面','install','primary-btn','style="margin-top:14px"'):'')+'</div><p class="fine-print">这是手机网页版 demo。个人课表与备忘录保存在当前浏览器；清除浏览器数据会移除保存内容。建议定期导出备份。</p></section></div>';
+  main.innerHTML=heading('按你的节奏，来安排。','外观、学校、学期与课表数据，都在这里管理。')+'<div class="content-column">'+appearanceCard()+'<form id="settings-form" class="settings-card"><h3>学校、学期与作息</h3><div class="form-grid"><label class="field full">学校名称<input name="school" maxlength="60" required placeholder="我的学校" value="'+esc(s.school)+'"></label><label class="field full">学期名称<input name="term" maxlength="60" required value="'+esc(s.term)+'"></label><label class="field">第 1 周的星期一<input type="date" name="startDate" required value="'+s.startDate+'"></label><label class="field">学期总周数<input type="number" name="totalWeeks" min="1" max="30" required value="'+s.totalWeeks+'"></label><label class="field full">每天的节数<select name="periodCount">'+options(6,16,s.times.length,' 节')+'</select></label></div><p class="fine-print">请按你学校的校历与作息表修改。第一周起始日必须是星期一；新增节次请填写时间，已有课程使用的节次不能被移除。</p><details><summary>修改每天 <span id="period-count-label">'+s.times.length+'</span> 节的作息时间</summary><div id="time-fields" style="margin-top:12px">'+timeFields(s.times)+'</div></details><div class="form-footer">'+button('保存设置','submit-settings','primary-btn')+'</div></form><section class="settings-card"><h3>我的课表数据</h3><div class="settings-row"><div><h4>导出课表备份</h4><p>保存课程、备忘录、学校、学期和作息，方便迁移或恢复。</p></div>'+button('导出 JSON','backup','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复备份 / 导入 PDF</h4><p>先预览并确认，再替换已有课表。兼容旧版备份。</p></div>'+button('前往导入','goto-import','secondary-btn')+'</div><div class="settings-row"><div><h4>恢复示例课表</h4><p>替换为演示课程，恢复示例学期与作息，保留学校名称与备忘录。</p></div>'+button('恢复示例','reset-demo','danger-btn')+'</div></section><section class="settings-card"><h3>像 App 一样打开</h3><div class="install-banner"><p class="install-info">在安卓 Chrome 浏览器打开本页，点右上角菜单，选择“添加到主屏幕”或“安装应用”，就能从手机桌面打开。</p>'+(deferredInstall?button('添加到手机桌面','install','primary-btn','style="margin-top:14px"'):'')+'</div><p class="fine-print">这是手机网页版 demo。个人课表与备忘录保存在当前浏览器；清除浏览器数据会移除保存内容。建议定期导出备份。</p></section></div>';
 }
 function render(){
   courseSelection=null;selectionDrag=null;
+  if(route!=='settings'){appearanceDraft={...appearance};applyAppearance(appearance);}
   renderNav();
   ({week:renderWeek,today:renderToday,memos:renderMemos,import:renderImport,settings:renderSettings})[route]();
 }
@@ -281,7 +331,12 @@ document.addEventListener('click',async(event)=>{
   const el=event.target.closest('[data-action]');if(!el)return;
   const action=el.dataset.action;
   try{
-    if(action==='toggle-weekends'){showWeekends=!showWeekends;render();}
+    if(action==='theme-preset'){appearanceDraft.color=softenColor(el.dataset.color);updateAppearancePreview();}
+    else if(action==='choose-background')document.querySelector('#background-input').click();
+    else if(action==='remove-background'){appearanceDraft.background='';updateAppearancePreview();}
+    else if(action==='reset-appearance'){appearanceDraft={...DEFAULT_APPEARANCE};updateAppearancePreview();}
+    else if(action==='cancel-appearance'){appearanceDraft={...appearance};updateAppearancePreview();}
+    else if(action==='toggle-weekends'){showWeekends=!showWeekends;render();}
     else if(action==='prev-week'){selectedWeek=clampWeek(selectedWeek-1);render();}
     else if(action==='next-week'){selectedWeek=clampWeek(selectedWeek+1);render();}
     else if(action==='current-week'){selectedWeek=clampWeek(weekOf(localDate(),state.settings));render();}
@@ -344,12 +399,18 @@ document.addEventListener('click',async(event)=>{
     else if(action==='install'&&deferredInstall){await deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;render();}
   }catch(err){toast(err.message);}
 });
-document.addEventListener('submit',(event)=>{
-  const form=event.target;if(!['course-form','settings-form','memo-form'].includes(form.id))return;
+document.addEventListener('submit',async(event)=>{
+  const form=event.target;if(!['course-form','settings-form','memo-form','appearance-form'].includes(form.id))return;
   event.preventDefault();
   try{
     const data=Object.fromEntries(new FormData(form).entries());
-    if(form.id==='memo-form'){
+    if(form.id==='appearance-form'){
+      if(backgroundBusy||appearanceSaving)return;
+      const next=normalizeAppearance(appearanceDraft);appearanceSaving=true;
+      try{await writeAppearance(JSON.stringify(next));appearance=next;appearanceDraft={...next};updateAppearancePreview();form.querySelector('[data-appearance-status]').textContent='外观已保存';toast('外观已保存');}
+      catch{throw new Error('本机存储空间不足或不可用，外观未保存。请移除背景图片后重试。');}
+      finally{appearanceSaving=false;}
+    }else if(form.id==='memo-form'){
       const previous=state.memos.find(m=>m.id===form.dataset.id);
       if(form.dataset.id&&!previous)throw new Error('这条备忘已不存在');
       if(!previous&&state.memos.length>=500)throw new Error('最多保存 500 条备忘，请先整理已有内容');

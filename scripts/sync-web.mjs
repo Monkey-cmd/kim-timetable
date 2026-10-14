@@ -12,6 +12,8 @@ let app=await fs.readFile(path.join(webSource,'app.js'),'utf8');
 app="import {isNative,saveNativeBackup,initializeNativeApp,readSavedState,writeSavedState} from './native-app.js';\n"+app;
 app=app.replace('const stored=localStorage.getItem(KEY);','const stored=await readSavedState(KEY);');
 app=app.replace('stored??localStorage.getItem(LEGACY_KEY)','stored??await readSavedState(LEGACY_KEY)');
+app=app.replace('return localStorage.getItem(APPEARANCE_KEY);','return readSavedState(APPEARANCE_KEY);');
+app=app.replace('localStorage.setItem(APPEARANCE_KEY,value);','await writeSavedState(APPEARANCE_KEY,value);');
 const persistStart=app.indexOf('function persist(next){'),persistEnd=app.indexOf('function toast(',persistStart);
 if(persistStart<0||persistEnd<0)throw new Error('课表保存入口已变化，请重新核对安卓适配');
 app=app.slice(0,persistStart)+`let saving=false;
